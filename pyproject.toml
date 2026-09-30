@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lerobot-policy-vla-ttt"
+version = "0.1.0"
+description = "Out-of-tree LeRobot policy plugin for VLA test-time training research"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+license = "Apache-2.0"
+dependencies = [
+    "lerobot[evo1,training]==0.6.1",
+]
+
+[project.optional-dependencies]
+libero = ["lerobot[libero]==0.6.1"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3,<10",
+    "ruff>=0.11,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lerobot_policy_vla_ttt"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: requires a real checkpoint and CUDA",
+    "libero: requires the LIBERO benchmark environment and assets",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

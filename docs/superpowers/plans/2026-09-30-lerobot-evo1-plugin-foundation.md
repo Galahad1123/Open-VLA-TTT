@@ -52,7 +52,7 @@
 - `tests/integration/test_evo1_equivalence.py`：真实 checkpoint 等价性与 round-trip。
 - `tests/integration/test_rollout_smoke.py`：标准 LeRobot 单 episode rollout 冒烟测试。
 
-### 任务 1：项目骨架与严格上游兼容性
+### Task 1：项目骨架与严格上游兼容性
 
 **文件：**
 - 新建：`pyproject.toml`、`.gitignore`、`LICENSE`、`UPSTREAM.md`、`uv.lock`
@@ -96,7 +96,7 @@ git add pyproject.toml uv.lock .gitignore LICENSE UPSTREAM.md src/lerobot_policy
 git commit -m "build: initialize LeRobot policy plugin"
 ```
 
-### 任务 2：注册与 Evo-1 兼容的配置
+### Task 2：注册与 Evo-1 兼容的配置
 
 **文件：**
 - 新建：`src/lerobot_policy_vla_ttt/configuration_vla_ttt.py`
@@ -140,7 +140,7 @@ git add src/lerobot_policy_vla_ttt tests/unit/test_configuration.py tests/unit/t
 git commit -m "feat: register VLA-TTT Evo-1 configuration"
 ```
 
-### 任务 3：精确委托 Evo-1 Processor
+### Task 3：精确委托 Evo-1 Processor
 
 **文件：**
 - 新建：`src/lerobot_policy_vla_ttt/processor_vla_ttt.py`
@@ -181,7 +181,7 @@ git add src/lerobot_policy_vla_ttt/processor_vla_ttt.py tests/unit/test_processo
 git commit -m "feat: delegate VLA-TTT processors to Evo-1"
 ```
 
-### 任务 4：薄 Policy 子类与空扩展接口
+### Task 4：薄 Policy 子类与空扩展接口
 
 **文件：**
 - 新建：`src/lerobot_policy_vla_ttt/modeling_vla_ttt.py`、`tests/unit/test_policy.py`
@@ -223,7 +223,7 @@ git add src/lerobot_policy_vla_ttt tests/unit/test_policy.py tests/unit/test_dis
 git commit -m "feat: add thin VLA-TTT policy subclass"
 ```
 
-### 任务 5：严格 Checkpoint 加载与 Evo-1 Warm Start
+### Task 5：严格 Checkpoint 加载与 Evo-1 Warm Start
 
 **文件：**
 - 新建：`src/lerobot_policy_vla_ttt/checkpoint.py`、`tests/unit/test_checkpoint_mapping.py`
@@ -271,7 +271,7 @@ git add src/lerobot_policy_vla_ttt/checkpoint.py src/lerobot_policy_vla_ttt/mode
 git commit -m "feat: strictly initialize from Evo-1 checkpoints"
 ```
 
-### 任务 6：自包含插件 Checkpoint 转换
+### Task 6：自包含插件 Checkpoint 转换
 
 **文件：**
 - 修改：`src/lerobot_policy_vla_ttt/checkpoint.py`、`src/lerobot_policy_vla_ttt/__init__.py`
@@ -309,7 +309,7 @@ git add src/lerobot_policy_vla_ttt tests/unit/test_checkpoint_conversion.py
 git commit -m "feat: convert complete Evo-1 checkpoints"
 ```
 
-### 任务 7：真实 Checkpoint 数值等价性与 Round-Trip
+### Task 7：真实 Checkpoint 数值等价性与 Round-Trip
 
 **文件：**
 - 新建：`tests/integration/conftest.py`、`tests/integration/test_evo1_equivalence.py`
@@ -347,7 +347,7 @@ git add tests/integration/conftest.py tests/integration/test_evo1_equivalence.py
 git commit -m "test: verify Evo-1 numerical equivalence"
 ```
 
-### 任务 8：标准 LeRobot 训练与 Rollout 接口
+### Task 8：标准 LeRobot 训练与 Rollout 接口
 
 **文件：**
 - 新建：`README.md`、`tests/integration/test_rollout_smoke.py`
@@ -397,7 +397,7 @@ git add README.md UPSTREAM.md tests/integration/test_rollout_smoke.py
 git commit -m "docs: document LeRobot training and rollout workflow"
 ```
 
-### 任务 9：最终验收
+### Task 9：最终验收
 
 **文件：**
 - 只修改验证发现的缺陷所必需的文件，不扩大范围。
