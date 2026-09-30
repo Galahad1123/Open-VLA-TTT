@@ -147,6 +147,7 @@ def convert_evo1_checkpoint(
         policy.config,
         source,
         revision=revision,
+        local_files_only=local_files_only,
     )
 
     destination.parent.mkdir(parents=True, exist_ok=True)

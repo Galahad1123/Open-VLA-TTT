@@ -102,8 +102,29 @@ def test_from_evo1_pretrained_strictly_warm_starts_plugin(
             "path": source_path,
             "revision": "abc123",
             "local_files_only": True,
+            "strict": True,
         }
     ]
+
+
+@pytest.mark.parametrize("loader", ["from_pretrained", "from_evo1_pretrained"])
+def test_checkpoint_entry_points_reject_non_strict_loading(
+    loader: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkpoint_type = "vla_ttt" if loader == "from_pretrained" else "evo1"
+    source_path = _checkpoint_dir(tmp_path, checkpoint_type)
+    load_calls: list[str] = []
+
+    def fake_load(cls, pretrained_name_or_path, **kwargs):
+        load_calls.append(str(pretrained_name_or_path))
+        return object()
+
+    monkeypatch.setattr(Evo1Policy, "from_pretrained", classmethod(fake_load))
+
+    with pytest.raises(ValueError, match="strict=True"):
+        getattr(TinyVLATTTPolicy, loader)(source_path, strict=False)
+
+    assert load_calls == []
 
 
 def test_checkpoint_entry_points_reject_wrong_types_before_loading(

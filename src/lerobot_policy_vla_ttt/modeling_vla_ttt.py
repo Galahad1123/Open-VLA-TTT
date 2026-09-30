@@ -39,6 +39,9 @@ class VLATTTPolicy(Evo1Policy):
         **kwargs: Any,
     ) -> VLATTTPolicy:
         """Load only a checkpoint already serialized as the plugin policy type."""
+        if kwargs.get("strict", True) is not True:
+            raise ValueError("VLATTTPolicy checkpoint loading requires strict=True.")
+        kwargs["strict"] = True
         policy_type = checkpoint_policy_type(
             pretrained_name_or_path,
             revision=kwargs.get("revision"),
@@ -67,6 +70,9 @@ class VLATTTPolicy(Evo1Policy):
         **kwargs: Any,
     ) -> VLATTTPolicy:
         """Strictly initialize this plugin from an ordinary Evo-1 checkpoint."""
+        if kwargs.get("strict", True) is not True:
+            raise ValueError("VLATTTPolicy checkpoint loading requires strict=True.")
+        kwargs["strict"] = True
         policy_type = checkpoint_policy_type(
             pretrained_name_or_path,
             revision=revision,

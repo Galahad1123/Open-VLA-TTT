@@ -3,7 +3,10 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "lerobot-policy-vla-ttt"
+# LeRobot 0.6.1 discovers plugins from the literal distribution metadata name.
+# Keep underscores here; PyPA still canonicalizes this to the same install name as
+# ``lerobot-policy-vla-ttt``, while LeRobot can import it as a Python module.
+name = "lerobot_policy_vla_ttt"
 version = "0.1.0"
 description = "Out-of-tree LeRobot policy plugin for VLA test-time training research"
 readme = "README.md"

@@ -106,6 +106,47 @@ def test_pretrained_factory_forwards_every_argument(monkeypatch: pytest.MonkeyPa
     ]
 
 
+def test_pretrained_factory_enforces_local_only_for_both_pipelines(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _config()
+    preprocessor = object()
+    postprocessor = object()
+    calls: list[dict[str, object]] = []
+
+    def fake_load(cls, **kwargs):
+        calls.append(kwargs)
+        return preprocessor if len(calls) == 1 else postprocessor
+
+    monkeypatch.setattr(
+        processor_vla_ttt.PolicyProcessorPipeline,
+        "from_pretrained",
+        classmethod(fake_load),
+    )
+    monkeypatch.setattr(
+        processor_vla_ttt,
+        "_reconnect_relative_absolute_steps",
+        lambda *args: None,
+    )
+    monkeypatch.setattr(
+        processor_vla_ttt,
+        "reconcile_evo1_processors",
+        lambda config_arg, pre, post: (pre, post),
+    )
+
+    result = processor_vla_ttt.make_vla_ttt_pre_post_processors_from_pretrained(
+        config,
+        "owner/checkpoint",
+        revision="abc123",
+        local_files_only=True,
+    )
+
+    assert result == (preprocessor, postprocessor)
+    assert len(calls) == 2
+    assert all(call["local_files_only"] is True for call in calls)
+    assert all(call["revision"] == "abc123" for call in calls)
+
+
 def test_fresh_and_pretrained_paths_preserve_evo1_stat_padding(tmp_path) -> None:
     config = _config()
     stats = _stats()

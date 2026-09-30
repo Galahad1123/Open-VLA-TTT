@@ -49,6 +49,7 @@ def test_conversion_saves_self_contained_policy_processors_and_metadata(
     policy = FakePolicy()
     preprocessor = FakeArtifact("policy_preprocessor.json", "pre")
     postprocessor = FakeArtifact("policy_postprocessor.json", "post")
+    processor_calls: list[dict[str, object]] = []
 
     monkeypatch.setattr(
         VLATTTPolicy,
@@ -58,7 +59,7 @@ def test_conversion_saves_self_contained_policy_processors_and_metadata(
     monkeypatch.setattr(
         processor_vla_ttt,
         "make_vla_ttt_pre_post_processors_from_pretrained",
-        lambda *args, **kwargs: (preprocessor, postprocessor),
+        lambda *args, **kwargs: processor_calls.append(kwargs) or (preprocessor, postprocessor),
     )
 
     result = convert_evo1_checkpoint(
@@ -72,6 +73,7 @@ def test_conversion_saves_self_contained_policy_processors_and_metadata(
     assert len(policy.save_calls) == 1
     assert len(preprocessor.save_calls) == 1
     assert len(postprocessor.save_calls) == 1
+    assert processor_calls == [{"revision": "abc123", "local_files_only": True}]
     assert json.loads((destination / "config.json").read_text())["type"] == "vla_ttt"
     metadata = json.loads((destination / "vla_ttt_conversion.json").read_text())
     assert metadata == {
