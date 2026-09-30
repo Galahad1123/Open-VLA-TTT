@@ -17,6 +17,8 @@
 
 当前执行环境未设置 `VLA_TTT_EVO1_CHECKPOINT`，且 `nvidia-smi` 无法连接驱动；因此真实 checkpoint 数值等价性测试保持显式 skip，不能据此宣称 GPU 验证完成。
 
+LeRobot 0.6.1 的真实机器人部署入口为 `lerobot-rollout`；LIBERO 仿真评测入口为 `lerobot-eval --env.type=libero`。当前未安装或下载 LIBERO 环境资产，单 episode 测试保持显式 skip。
+
 ## 下载规则
 
 下载任何模型、数据集或 benchmark 资产前，先向用户报告仓库或 URL、不可变 revision、缓存目标和 dry-run 预计字节数。模型和数据不进入 Git。
