@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import shutil
+import tempfile
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -111,3 +113,62 @@ def checkpoint_policy_type(
     if not isinstance(policy_type, str) or not policy_type:
         raise ValueError(f"Missing or invalid 'type' in {config_path}")
     return policy_type
+
+
+def convert_evo1_checkpoint(
+    source: str | Path,
+    destination: Path,
+    *,
+    revision: str | None = None,
+    local_files_only: bool = False,
+) -> Path:
+    """Convert a complete Evo-1 checkpoint into a self-contained plugin checkpoint."""
+    from .modeling_vla_ttt import VLATTTPolicy
+    from .processor_vla_ttt import make_vla_ttt_pre_post_processors_from_pretrained
+
+    destination = Path(destination)
+    if destination.exists() and any(destination.iterdir()):
+        raise FileExistsError(f"Destination {destination} is not empty")
+
+    source_type = checkpoint_policy_type(
+        source,
+        revision=revision,
+        local_files_only=local_files_only,
+    )
+    if source_type != "evo1":
+        raise ValueError(f"Checkpoint conversion requires source type 'evo1', got {source_type!r}.")
+
+    policy = VLATTTPolicy.from_evo1_pretrained(
+        source,
+        revision=revision,
+        local_files_only=local_files_only,
+    )
+    preprocessor, postprocessor = make_vla_ttt_pre_post_processors_from_pretrained(
+        policy.config,
+        source,
+        revision=revision,
+    )
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f".{destination.name}-", dir=destination.parent))
+    try:
+        policy.save_pretrained(staging)
+        preprocessor.save_pretrained(staging)
+        postprocessor.save_pretrained(staging)
+        metadata = {
+            "format_version": 1,
+            "source": str(source),
+            "source_policy_type": source_type,
+            "source_revision": revision,
+            "target_policy_type": "vla_ttt",
+        }
+        (staging / "vla_ttt_conversion.json").write_text(
+            json.dumps(metadata, indent=2, sort_keys=True) + "\n"
+        )
+        if destination.exists():
+            destination.rmdir()
+        staging.replace(destination)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
+    return destination

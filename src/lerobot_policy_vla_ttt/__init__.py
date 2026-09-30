@@ -1,5 +1,6 @@
 """LeRobot policy plugin for VLA test-time training research."""
 
+from .checkpoint import convert_evo1_checkpoint
 from .compatibility import (
     SUPPORTED_LEROBOT_VERSION,
     ensure_supported_lerobot_version,
@@ -12,6 +13,7 @@ __all__ = [
     "SUPPORTED_LEROBOT_VERSION",
     "VLATTTConfig",
     "VLATTTPolicy",
+    "convert_evo1_checkpoint",
     "ensure_supported_lerobot_version",
     "require_optional_module",
 ]
