@@ -45,7 +45,7 @@
 
 ## 4. 上游版本策略
 
-初始兼容目标为 LeRobot `0.6.2`，Python `>=3.12,<3.14`。直接依赖 `lerobot[evo1,training]==0.6.2`，LIBERO 支持作为单独 optional extra 提供。项目提交 `uv.lock`，保证开发和 CI 使用同一依赖解析结果。
+初始兼容目标为 LeRobot `0.6.1`，Python `>=3.12,<3.14`。直接依赖 `lerobot[evo1,training]==0.6.1`，LIBERO 支持作为单独 optional extra 提供。项目提交 `uv.lock`，保证开发和 CI 使用同一依赖解析结果。LeRobot 仓库 `main` 中尚未发布的版本号不作为依赖目标。
 
 项目不支持未锁定的 LeRobot `main`。升级 LeRobot 必须通过独立变更完成，并重新运行基线等价性、checkpoint round-trip 和真实 rollout 测试。
 
