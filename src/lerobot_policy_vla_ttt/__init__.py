@@ -5,9 +5,11 @@ from .compatibility import (
     ensure_supported_lerobot_version,
     require_optional_module,
 )
+from .configuration_vla_ttt import VLATTTConfig
 
 __all__ = [
     "SUPPORTED_LEROBOT_VERSION",
+    "VLATTTConfig",
     "ensure_supported_lerobot_version",
     "require_optional_module",
 ]
