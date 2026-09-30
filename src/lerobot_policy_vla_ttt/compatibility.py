@@ -23,6 +23,5 @@ def require_optional_module(module_name: str, *, install_command: str) -> None:
     """Raise an actionable error when an optional integration is unavailable."""
     if importlib.util.find_spec(module_name) is None:
         raise RuntimeError(
-            f"Optional module {module_name!r} is not installed. Install it with: "
-            f"{install_command}"
+            f"Optional module {module_name!r} is not installed. Install it with: {install_command}"
         )

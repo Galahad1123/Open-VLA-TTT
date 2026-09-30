@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import lerobot_policy_vla_ttt
 from lerobot.policies.factory import make_policy_config
+
+import lerobot_policy_vla_ttt
 from lerobot_policy_vla_ttt.configuration_vla_ttt import VLATTTConfig
 
 

@@ -3,9 +3,9 @@ from __future__ import annotations
 from dataclasses import fields
 
 import pytest
-
 from lerobot.configs.policies import PreTrainedConfig
 from lerobot.policies.evo1.configuration_evo1 import Evo1Config
+
 from lerobot_policy_vla_ttt.configuration_vla_ttt import VLATTTConfig
 
 
