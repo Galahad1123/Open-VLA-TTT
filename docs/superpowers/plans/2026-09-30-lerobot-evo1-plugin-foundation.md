@@ -1,479 +1,452 @@
-# LeRobot Evo-1 Plugin Foundation Implementation Plan
+# LeRobot Evo-1 插件基础实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **供智能体执行者使用：** 必须使用 `superpowers:subagent-driven-development`（推荐）或 `superpowers:executing-plans`，逐项实施本计划。步骤使用复选框（`- [ ]`）跟踪。
 
-**Goal:** Build a small, independently installable `lerobot-policy-vla-ttt` package that LeRobot discovers as `policy.type=vla_ttt` while delegating Evo-1 modeling, datasets, processors, training, checkpoints, and rollout to LeRobot 0.6.1.
+**目标：** 构建一个小型、可独立安装的 `lerobot-policy-vla-ttt` 包，使 LeRobot 能以 `policy.type=vla_ttt` 自动发现它，同时复用 LeRobot 0.6.1 的 Evo-1 模型、数据集、processor、训练、checkpoint 和 rollout。
 
-**Architecture:** `VLATTTConfig` and `VLATTTPolicy` are thin subclasses of LeRobot's Evo-1 classes; processor entry points delegate to the upstream factories, and normal training/rollout stays in LeRobot's CLIs. Project-owned code is limited to compatibility checks, an empty future-extension hook, strict Evo-1 checkpoint conversion, and tests proving that the baseline has not diverged.
+**架构：** `VLATTTConfig` 与 `VLATTTPolicy` 是 LeRobot Evo-1 对应类的薄子类；processor 入口委托上游 factory，普通训练与 rollout 继续使用 LeRobot CLI。项目代码仅负责兼容性检查、为空的未来扩展钩子、严格 checkpoint 转换及基线等价性测试。
 
-**Tech Stack:** Python 3.12, PyTorch, LeRobot 0.6.1 with `evo1` and `training` extras, Hugging Face Hub, pytest, uv, Apache-2.0.
+**技术栈：** Python 3.12、PyTorch、带 `evo1` 与 `training` extras 的 LeRobot 0.6.1、Hugging Face Hub、pytest、uv、Apache-2.0。
 
-**Spec:** `docs/superpowers/specs/2026-09-30-lerobot-evo1-plugin-foundation-design.md`
+**规格：** `docs/superpowers/specs/2026-09-30-lerobot-evo1-plugin-foundation-design.md`
 
-## Global Constraints
+## 全局约束
 
-- Support exactly Python `>=3.12,<3.14` and `lerobot[evo1,training]==0.6.1` in this milestone.
-- Package/distribution name is `lerobot-policy-vla-ttt`; import package is `lerobot_policy_vla_ttt`; registered policy type is `vla_ttt`.
-- Do not vendor, copy, patch in place, or require a checkout of LeRobot or Evo-1.
-- Do not wrap `LeRobotDataset`; baseline training uses LeRobot's dataset and `lerobot-train` directly.
-- Do not implement RoboTTT, Titans, memory layers, sequence sampling, TBPTT, a custom trainer, or a custom robot loop.
-- Do not silently use `strict=False`; checkpoint conversion must report every missing, unexpected, and shape-mismatched tensor.
-- CPU unit tests must not instantiate or download InternVL3-1B or Evo-1 weights.
-- GPU tests use batch size 1 and bf16 on the single RTX PRO 5000 72GB; they remain opt-in through the `integration` marker.
-- Before any model or dataset download, stop and tell the user the repository ID, revision, destination/cache, and dry-run byte estimate. Continue only after that notification; never commit weights or datasets.
-- Commit `uv.lock` and `UPSTREAM.md`; record exact model/dataset revisions and the verified CUDA/driver/GPU combination.
+- 只支持 Python `>=3.12,<3.14` 和 `lerobot[evo1,training]==0.6.1`。
+- 分发包名为 `lerobot-policy-vla-ttt`，导入包名为 `lerobot_policy_vla_ttt`，policy 类型为 `vla_ttt`。
+- 不 vendor、复制或原地修改 LeRobot/Evo-1，也不依赖 LeRobot 仓库 checkout。
+- 不包装 `LeRobotDataset`；基线训练直接使用 LeRobotDataset 和 `lerobot-train`。
+- 不实现 RoboTTT、Titans、memory layer、序列采样、TBPTT、自定义 trainer 或自定义机器人循环。
+- 不得静默使用 `strict=False`；checkpoint 转换必须报告所有 missing、unexpected 和 shape-mismatched tensor。
+- CPU 单元测试不得实例化或下载 InternVL3-1B、Evo-1 权重。
+- GPU 测试在单张 RTX PRO 5000 72GB 上使用 batch size 1 和 bf16，并通过 `integration` marker 显式启用。
+- 下载任何模型或数据集前，必须暂停并告知用户仓库 ID、revision、目标缓存位置和 dry-run 预计字节数。告知后才能继续；权重和数据绝不提交到 Git。
+- 提交 `uv.lock` 和 `UPSTREAM.md`，记录模型/数据集精确 revision 及验证过的 CUDA、驱动和 GPU 组合。
 
-## Review Focus
+## 审查重点
 
-- Processor loading from an existing Evo-1 checkpoint must preserve upstream state/action-stat padding, including LeRobot's resume behavior; Task 3 pins delegation for both fresh and pretrained factories.
-- A checkpoint whose `policy.type` is neither `evo1` nor `vla_ttt` must fail with a targeted message before allocating the model; Tasks 5 and 6 pin both paths.
-- One malformed checkpoint may contain missing, unexpected, and wrong-shaped tensors simultaneously; Task 5 requires one aggregated diagnostic containing all three classes.
-- Plugin construction must not mutate global LeRobot registries or replace `Evo1Model`; Task 4 tests instance-local, no-op extension installation.
-- Reset and action-queue behavior must remain inherited from Evo-1 across checkpoint round trips; Tasks 7 and 8 test reset and repeated inference rather than only one forward call.
+- 从 Evo-1 checkpoint 加载 processor 时须保留上游 state/action 统计量 padding 与 resume 行为；任务 3 覆盖新建和 pretrained 两条路径。
+- checkpoint 的 `policy.type` 不是预期值时，须在分配模型前给出针对性错误；任务 5、6 覆盖此项。
+- 同一损坏 checkpoint 可能同时含 missing、unexpected 和错误 shape 的 tensor；任务 5 要求一次完整报告三类问题。
+- 插件构造不得修改全局 LeRobot registry 或替换 `Evo1Model`；任务 4 验证实例级空扩展。
+- checkpoint round-trip 后 reset 与 action queue 行为须保持继承自 Evo-1；任务 7、8 验证 reset 和重复推理。
 
 ---
 
-## File Map
+## 文件职责
 
-- `pyproject.toml` — build metadata, exact LeRobot dependency, extras, pytest markers, and package discovery.
-- `uv.lock` — reproducible dependency resolution for Python 3.12.
-- `.gitignore` — exclude caches, virtual environments, outputs, downloaded assets, and local secrets.
-- `LICENSE` — Apache License 2.0 text.
-- `README.md` — installation, plugin training/rollout, checkpoint conversion, integration tests, and download policy.
-- `UPSTREAM.md` — exact upstream releases/revisions and verified hardware/software matrix.
-- `src/lerobot_policy_vla_ttt/__init__.py` — public plugin API and discovery-triggering imports.
-- `src/lerobot_policy_vla_ttt/compatibility.py` — strict LeRobot version check and optional-extra diagnostics.
-- `src/lerobot_policy_vla_ttt/configuration_vla_ttt.py` — registered `VLATTTConfig` subclass and Evo-1 config conversion.
-- `src/lerobot_policy_vla_ttt/processor_vla_ttt.py` — naming-convention entry points that delegate to Evo-1 processors.
-- `src/lerobot_policy_vla_ttt/modeling_vla_ttt.py` — thin policy subclass, extension hook, and explicit checkpoint loaders.
-- `src/lerobot_policy_vla_ttt/checkpoint.py` — checkpoint type inspection, state-dict compatibility report, and complete checkpoint conversion.
-- `tests/unit/*` — CPU-only behavior tests with upstream model construction mocked.
-- `tests/integration/conftest.py` — opt-in environment checks and synthetic observation builder.
-- `tests/integration/test_evo1_equivalence.py` — real-checkpoint numerical equivalence and round trip.
-- `tests/integration/test_rollout_smoke.py` — one-episode standard LeRobot rollout smoke test.
+- `pyproject.toml`：构建元数据、精确依赖、extras、pytest markers 与包发现。
+- `uv.lock`：Python 3.12 的可复现依赖解析结果。
+- `.gitignore`：排除缓存、虚拟环境、输出、下载资产和本地 secret。
+- `LICENSE`：Apache License 2.0 全文。
+- `README.md`：安装、训练/rollout、checkpoint 转换、测试和下载规则。
+- `UPSTREAM.md`：上游 release/revision 与验证过的软硬件矩阵。
+- `src/lerobot_policy_vla_ttt/__init__.py`：公共 API 与触发 discovery 的导入。
+- `src/lerobot_policy_vla_ttt/compatibility.py`：LeRobot 版本和 optional extra 检查。
+- `src/lerobot_policy_vla_ttt/configuration_vla_ttt.py`：`VLATTTConfig` 注册与配置转换。
+- `src/lerobot_policy_vla_ttt/processor_vla_ttt.py`：委托 Evo-1 processor 的入口。
+- `src/lerobot_policy_vla_ttt/modeling_vla_ttt.py`：薄 policy 子类、扩展钩子和 checkpoint loader。
+- `src/lerobot_policy_vla_ttt/checkpoint.py`：类型检查、state-dict 兼容报告和完整转换。
+- `tests/unit/*`：不构造上游大模型的 CPU 单元测试。
+- `tests/integration/conftest.py`：显式启用条件和合成 observation 构造器。
+- `tests/integration/test_evo1_equivalence.py`：真实 checkpoint 等价性与 round-trip。
+- `tests/integration/test_rollout_smoke.py`：标准 LeRobot 单 episode rollout 冒烟测试。
 
-### Task 1: Package Skeleton and Strict Upstream Compatibility
+### 任务 1：项目骨架与严格上游兼容性
 
-**Files:**
-- Create: `pyproject.toml`
-- Create: `.gitignore`
-- Create: `LICENSE`
-- Create: `UPSTREAM.md`
-- Create: `src/lerobot_policy_vla_ttt/__init__.py`
-- Create: `src/lerobot_policy_vla_ttt/compatibility.py`
-- Create: `tests/unit/test_compatibility.py`
-- Create: `uv.lock`
+**文件：**
+- 新建：`pyproject.toml`、`.gitignore`、`LICENSE`、`UPSTREAM.md`、`uv.lock`
+- 新建：`src/lerobot_policy_vla_ttt/__init__.py`
+- 新建：`src/lerobot_policy_vla_ttt/compatibility.py`
+- 新建：`tests/unit/test_compatibility.py`
 
-**Interfaces:**
-- Produces: `SUPPORTED_LEROBOT_VERSION: Final[str] = "0.6.1"`.
-- Produces: `ensure_supported_lerobot_version(installed_version: str | None = None) -> None`.
-- Produces: `require_optional_module(module_name: str, *, install_command: str) -> None`.
+**接口：**
+- 产出：`SUPPORTED_LEROBOT_VERSION: Final[str] = "0.6.1"`。
+- 产出：`ensure_supported_lerobot_version(installed_version: str | None = None) -> None`。
+- 产出：`require_optional_module(module_name: str, *, install_command: str) -> None`。
 
-- [ ] **Step 1: Write failing compatibility tests**
+- [ ] **步骤 1：编写失败的兼容性测试**
 
-Add tests named `test_accepts_exact_supported_lerobot_version`, `test_rejects_other_lerobot_version_with_both_versions`, and `test_missing_optional_module_names_install_command`. Monkeypatch `importlib.metadata.version` and `importlib.util.find_spec`; assert exact-version success and actionable `RuntimeError` messages.
+添加 `test_accepts_exact_supported_lerobot_version`、`test_rejects_other_lerobot_version_with_both_versions`、`test_missing_optional_module_names_install_command`。Monkeypatch `importlib.metadata.version` 和 `importlib.util.find_spec`；验证精确版本成功，以及错误包含当前/支持版本或明确安装命令。
 
-- [ ] **Step 2: Run the focused tests and confirm the initial failure**
+- [ ] **步骤 2：确认测试初始失败**
 
-Run: `python -m pytest tests/unit/test_compatibility.py -v`
+运行：`python -m pytest tests/unit/test_compatibility.py -v`
 
-Expected: FAIL because the package and functions do not exist.
+预期：因包和函数不存在而失败。
 
-- [ ] **Step 3: Add package metadata and minimal compatibility implementation**
+- [ ] **步骤 3：添加包元数据与最小实现**
 
-Configure hatchling for the `src` layout, `requires-python = ">=3.12,<3.14"`, dependency `lerobot[evo1,training]==0.6.1`, optional extra `libero = ["lerobot[libero]==0.6.1"]`, and a development dependency group containing pytest and ruff. Register pytest markers `integration` and `libero`. Implement the three interfaces above without importing any model module.
+使用 hatchling 和 `src` 布局；设置 `requires-python = ">=3.12,<3.14"`、依赖 `lerobot[evo1,training]==0.6.1`、extra `libero = ["lerobot[libero]==0.6.1"]`，以及包含 pytest、ruff 的开发依赖组。注册 `integration`、`libero` markers。实现三个接口，但不导入模型模块。
 
-- [ ] **Step 4: Add repository hygiene and provenance files**
+- [ ] **步骤 4：添加仓库卫生与来源记录**
 
-Ignore `.venv/`, caches, `outputs/`, `artifacts/`, `.env*`, and common checkpoint extensions. Add the unmodified Apache-2.0 license and an `UPSTREAM.md` table with LeRobot release `0.6.1`; leave model, dataset, driver, CUDA, and GPU values explicitly marked `not yet verified` rather than inventing revisions.
+忽略 `.venv/`、缓存、`outputs/`、`artifacts/`、`.env*` 和常见 checkpoint 后缀。加入未经修改的 Apache-2.0 许可证。`UPSTREAM.md` 记录 LeRobot `0.6.1`，其余未验证字段明确写为“尚未验证”。
 
-- [ ] **Step 5: Resolve dependencies and verify the package**
+- [ ] **步骤 5：解析依赖并验证**
 
-Run: `uv lock && uv run pytest tests/unit/test_compatibility.py -v`
+运行：`uv lock && uv run pytest tests/unit/test_compatibility.py -v`
 
-Expected: lock succeeds and all three tests PASS. This may fetch Python package metadata/packages, but must not download model weights or datasets.
+预期：lock 成功，三个测试通过。可获取 Python 包元数据/依赖，但不得下载模型或数据集。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
 ```bash
 git add pyproject.toml uv.lock .gitignore LICENSE UPSTREAM.md src/lerobot_policy_vla_ttt tests/unit/test_compatibility.py
 git commit -m "build: initialize LeRobot policy plugin"
 ```
 
-### Task 2: Registered Evo-1-Compatible Configuration
+### 任务 2：注册与 Evo-1 兼容的配置
 
-**Files:**
-- Create: `src/lerobot_policy_vla_ttt/configuration_vla_ttt.py`
-- Modify: `src/lerobot_policy_vla_ttt/__init__.py`
-- Create: `tests/unit/test_configuration.py`
-- Create: `tests/unit/test_discovery.py`
+**文件：**
+- 新建：`src/lerobot_policy_vla_ttt/configuration_vla_ttt.py`
+- 修改：`src/lerobot_policy_vla_ttt/__init__.py`
+- 新建：`tests/unit/test_configuration.py`、`tests/unit/test_discovery.py`
 
-**Interfaces:**
-- Consumes: `SUPPORTED_LEROBOT_VERSION` from Task 1.
-- Produces: `@PreTrainedConfig.register_subclass("vla_ttt") class VLATTTConfig(Evo1Config)`.
-- Produces: `VLATTTConfig.from_evo1_config(config: Evo1Config) -> VLATTTConfig`.
-- `VLATTTConfig` adds only `plugin_schema_version: int = 1` and `tested_lerobot_version: str = "0.6.1"`.
+**接口：**
+- 消费：任务 1 的 `SUPPORTED_LEROBOT_VERSION`。
+- 产出：`@PreTrainedConfig.register_subclass("vla_ttt") class VLATTTConfig(Evo1Config)`。
+- 产出：`VLATTTConfig.from_evo1_config(config: Evo1Config) -> VLATTTConfig`。
+- 只新增 `plugin_schema_version: int = 1`、`tested_lerobot_version: str = "0.6.1"`。
 
-- [ ] **Step 1: Write failing config round-trip and conversion tests**
+- [ ] **步骤 1：编写失败的 round-trip 与转换测试**
 
-Test that inherited Evo-1 fields survive `to_dict()` plus reconstruction, plugin metadata has the exact defaults above, and `from_evo1_config()` copies every init field declared by `dataclasses.fields(Evo1Config)` without sharing mutable values.
+验证继承字段经 `to_dict()` 和重建保持不变，元数据默认值精确匹配；`from_evo1_config()` 复制 `dataclasses.fields(Evo1Config)` 的所有 init 字段且不共享可变值。
 
-- [ ] **Step 2: Write the failing discovery test**
+- [ ] **步骤 2：编写失败的 discovery 测试**
 
-Import `lerobot_policy_vla_ttt`, then exercise LeRobot 0.6.1's public config/policy discovery factory with `policy.type=vla_ttt`; assert its resolved config class is `VLATTTConfig`. Do not test private registry dictionaries.
+导入插件后，通过 LeRobot 0.6.1 公开 factory 解析 `policy.type=vla_ttt`，断言配置类为 `VLATTTConfig`；不测试私有 registry。
 
-- [ ] **Step 3: Run the focused tests and confirm failure**
+- [ ] **步骤 3：确认测试失败**
 
-Run: `uv run pytest tests/unit/test_configuration.py tests/unit/test_discovery.py -v`
+运行：`uv run pytest tests/unit/test_configuration.py tests/unit/test_discovery.py -v`
 
-Expected: FAIL because `VLATTTConfig` is absent.
+预期：因 `VLATTTConfig` 不存在而失败。
 
-- [ ] **Step 4: Implement the registered dataclass and public import**
+- [ ] **步骤 4：实现注册类与公共导出**
 
-Use `dataclasses.fields(Evo1Config)` to select parent constructor fields in `from_evo1_config`; deep-copy field values and reject a non-`Evo1Config` argument with `TypeError`. Export `VLATTTConfig` from the package root so importing the distribution performs registration.
+用 `dataclasses.fields(Evo1Config)` 选择父类构造字段并 deep-copy；非 `Evo1Config` 参数抛出 `TypeError`。从包根导出 `VLATTTConfig`，使导入时完成注册。
 
-- [ ] **Step 5: Run tests**
+- [ ] **步骤 5：运行测试**
 
-Run: `uv run pytest tests/unit/test_configuration.py tests/unit/test_discovery.py -v`
+运行：`uv run pytest tests/unit/test_configuration.py tests/unit/test_discovery.py -v`
 
-Expected: PASS without network access or model construction.
+预期：全部通过，不访问网络、不构造模型。
 
-- [ ] **Step 6: Commit**
+- [ ] **步骤 6：提交**
 
 ```bash
 git add src/lerobot_policy_vla_ttt tests/unit/test_configuration.py tests/unit/test_discovery.py
 git commit -m "feat: register VLA-TTT Evo-1 configuration"
 ```
 
-### Task 3: Exact Evo-1 Processor Delegation
+### 任务 3：精确委托 Evo-1 Processor
 
-**Files:**
-- Create: `src/lerobot_policy_vla_ttt/processor_vla_ttt.py`
-- Create: `tests/unit/test_processor_delegation.py`
+**文件：**
+- 新建：`src/lerobot_policy_vla_ttt/processor_vla_ttt.py`
+- 新建：`tests/unit/test_processor_delegation.py`
 
-**Interfaces:**
-- Consumes: `VLATTTConfig` from Task 2.
-- Produces: `make_vla_ttt_pre_post_processors(config, dataset_stats=None, **kwargs) -> tuple[PolicyProcessorPipeline, PolicyProcessorPipeline]`.
-- Produces: `make_vla_ttt_pre_post_processors_from_pretrained(config, pretrained_path, *, revision=None, dataset_stats=None, dataset_meta=None, preprocessor_overrides=None, postprocessor_overrides=None, preprocessor_config_filename=..., postprocessor_config_filename=...) -> tuple[PolicyProcessorPipeline, PolicyProcessorPipeline]`.
-- Both functions return the upstream Evo-1 factory result unchanged.
+**接口：**
+- 消费：任务 2 的 `VLATTTConfig`。
+- 产出：`make_vla_ttt_pre_post_processors(config, dataset_stats=None, **kwargs) -> tuple[PolicyProcessorPipeline, PolicyProcessorPipeline]`。
+- 产出：`make_vla_ttt_pre_post_processors_from_pretrained(config, pretrained_path, *, revision=None, dataset_stats=None, dataset_meta=None, preprocessor_overrides=None, postprocessor_overrides=None, preprocessor_config_filename=..., postprocessor_config_filename=...) -> tuple[PolicyProcessorPipeline, PolicyProcessorPipeline]`。
+- 两个函数都原样返回上游 factory 结果。
 
-- [ ] **Step 1: Write failing delegation tests**
+- [ ] **步骤 1：编写失败的委托测试**
 
-Monkeypatch both upstream Evo-1 processor factories with sentinels. Assert each plugin factory forwards the same config object and every positional/keyword argument exactly once, returns the identical pair, and propagates the upstream exception unchanged.
+将两个上游 factory monkeypatch 为 sentinel；验证相同 config 和全部参数只转发一次，返回同一对象对，并原样传播上游异常。
 
-- [ ] **Step 2: Add a processor-stat regression test**
+- [ ] **步骤 2：添加统计量回归测试**
 
-With synthetic 7-dimensional state/action statistics, call both plugin and upstream fresh factories and compare pipeline step types plus serialized state. Repeat through the pretrained factory using a temporary processor checkpoint. This pins Evo-1 padding/resume semantics without duplicating them.
+用 7 维 state/action 合成统计量比较插件与上游的新建 pipeline step 类型和序列化状态；再通过临时 processor checkpoint 比较 pretrained 路径，固定 padding/resume 语义而不复制实现。
 
-- [ ] **Step 3: Run the focused tests and confirm failure**
+- [ ] **步骤 3：确认测试失败**
 
-Run: `uv run pytest tests/unit/test_processor_delegation.py -v`
+运行：`uv run pytest tests/unit/test_processor_delegation.py -v`
 
-Expected: FAIL because the convention-named processor module is absent.
+预期：因 processor 模块不存在而失败。
 
-- [ ] **Step 4: Implement thin factory functions**
+- [ ] **步骤 4：实现薄 factory**
 
-Import the factory functions from LeRobot 0.6.1's public Evo-1 processor module and call them directly. Do not construct, subclass, copy, or edit any processor step.
+从 LeRobot 0.6.1 公开 Evo-1 processor 模块导入并直接调用 factory；不构造、继承、复制或修改任何 processor step。
 
-- [ ] **Step 5: Run tests**
+- [ ] **步骤 5：运行测试并提交**
 
-Run: `uv run pytest tests/unit/test_processor_delegation.py -v`
+运行：`uv run pytest tests/unit/test_processor_delegation.py -v`
 
-Expected: PASS; network remains unused.
-
-- [ ] **Step 6: Commit**
+预期：全部通过且不访问网络。
 
 ```bash
 git add src/lerobot_policy_vla_ttt/processor_vla_ttt.py tests/unit/test_processor_delegation.py
 git commit -m "feat: delegate VLA-TTT processors to Evo-1"
 ```
 
-### Task 4: Thin Policy Subclass and No-Op Extension Seam
+### 任务 4：薄 Policy 子类与空扩展接口
 
-**Files:**
-- Create: `src/lerobot_policy_vla_ttt/modeling_vla_ttt.py`
-- Modify: `src/lerobot_policy_vla_ttt/__init__.py`
-- Create: `tests/unit/test_policy.py`
-- Modify: `tests/unit/test_discovery.py`
+**文件：**
+- 新建：`src/lerobot_policy_vla_ttt/modeling_vla_ttt.py`、`tests/unit/test_policy.py`
+- 修改：`src/lerobot_policy_vla_ttt/__init__.py`、`tests/unit/test_discovery.py`
 
-**Interfaces:**
-- Consumes: `VLATTTConfig` and `ensure_supported_lerobot_version()`.
-- Produces: `class VLATTTPolicy(Evo1Policy)` with `config_class = VLATTTConfig` and `name = "vla_ttt"`.
-- Produces: `VLATTTPolicy.install_extensions(self) -> None`, a default no-op called once after `Evo1Policy.__init__`.
+**接口：**
+- 消费：`VLATTTConfig`、`ensure_supported_lerobot_version()`。
+- 产出：`class VLATTTPolicy(Evo1Policy)`，其中 `config_class = VLATTTConfig`、`name = "vla_ttt"`。
+- 产出：默认空操作 `VLATTTPolicy.install_extensions(self) -> None`，在父类初始化后调用一次。
 
-- [ ] **Step 1: Write failing construction tests without allocating Evo-1**
+- [ ] **步骤 1：编写不分配大模型的失败测试**
 
-Monkeypatch `Evo1Policy.__init__`, the compatibility guard, and `VLATTTPolicy.install_extensions`. Assert call order is guard, parent initializer, extension hook; each is called once; the identical config and `vlm_hub_kwargs` reach the parent.
+Monkeypatch 父类初始化、兼容检查和扩展钩子；验证调用顺序为兼容检查、父类初始化、扩展钩子，各调用一次，config 和 `vlm_hub_kwargs` 原样传入父类。
 
-- [ ] **Step 2: Pin the empty extension behavior**
+- [ ] **步骤 2：固定空扩展行为**
 
-Use a fake parent initializer that sets a sentinel `model`. After default construction, assert `policy.model` is that exact sentinel, the model class was not replaced, no global Evo-1 class attributes changed, and `reset`, `select_action`, and `predict_action_chunk` resolve to inherited methods.
+假父类初始化设置 sentinel `model`；验证构造后仍为同一对象、模型类未替换、Evo-1 全局类属性未变，且 `reset`、`select_action`、`predict_action_chunk` 解析到继承方法。
 
-- [ ] **Step 3: Extend discovery coverage**
+- [ ] **步骤 3：扩展 discovery 测试**
 
-Use LeRobot's public policy factory with model construction mocked and assert `policy.type=vla_ttt` resolves `VLATTTPolicy`, not `Evo1Policy`.
+Mock 模型构造后调用公开 policy factory，验证 `policy.type=vla_ttt` 得到 `VLATTTPolicy` 而非 `Evo1Policy`。
 
-- [ ] **Step 4: Run focused tests and confirm failure**
+- [ ] **步骤 4：确认测试失败**
 
-Run: `uv run pytest tests/unit/test_policy.py tests/unit/test_discovery.py -v`
+运行：`uv run pytest tests/unit/test_policy.py tests/unit/test_discovery.py -v`
 
-Expected: FAIL because the policy class is absent.
+- [ ] **步骤 5：实现最小子类**
 
-- [ ] **Step 5: Implement the minimal subclass and exports**
+匹配 Evo-1 0.6.1 构造签名；先检查版本，再调用 `super().__init__` 和扩展钩子。不覆盖 forward、action、queue、reset、optimizer 或模型构造。
 
-Match Evo-1 0.6.1's constructor signature, run the version guard before allocation, call `super().__init__`, then call the instance hook. Add no forward, action, queue, reset, optimizer, or model-building override.
+- [ ] **步骤 6：运行测试并提交**
 
-- [ ] **Step 6: Run tests**
+运行：`uv run pytest tests/unit/test_policy.py tests/unit/test_discovery.py -v`
 
-Run: `uv run pytest tests/unit/test_policy.py tests/unit/test_discovery.py -v`
-
-Expected: PASS without loading InternVL3.
-
-- [ ] **Step 7: Commit**
+预期：通过且不加载 InternVL3。
 
 ```bash
 git add src/lerobot_policy_vla_ttt tests/unit/test_policy.py tests/unit/test_discovery.py
 git commit -m "feat: add thin VLA-TTT policy subclass"
 ```
 
-### Task 5: Strict Checkpoint Loading and Evo-1 Warm Start
+### 任务 5：严格 Checkpoint 加载与 Evo-1 Warm Start
 
-**Files:**
-- Create: `src/lerobot_policy_vla_ttt/checkpoint.py`
-- Modify: `src/lerobot_policy_vla_ttt/modeling_vla_ttt.py`
-- Create: `tests/unit/test_checkpoint_mapping.py`
+**文件：**
+- 新建：`src/lerobot_policy_vla_ttt/checkpoint.py`、`tests/unit/test_checkpoint_mapping.py`
+- 修改：`src/lerobot_policy_vla_ttt/modeling_vla_ttt.py`
 
-**Interfaces:**
-- Produces: immutable `StateDictCompatibility` with sorted `missing_keys`, `unexpected_keys`, and `shape_mismatches` fields plus `is_compatible: bool`.
-- Produces: `compare_state_dicts(source: Mapping[str, Tensor], target: Mapping[str, Tensor]) -> StateDictCompatibility`.
-- Produces: `load_state_dict_strict(target: nn.Module, source: Mapping[str, Tensor]) -> None`.
-- Produces: `VLATTTPolicy.from_pretrained(pretrained_name_or_path: str | Path, **kwargs) -> VLATTTPolicy`, which accepts only a `vla_ttt` checkpoint and otherwise fails before model allocation.
-- Produces: `VLATTTPolicy.from_evo1_pretrained(pretrained_name_or_path: str | Path, *, revision: str | None = None, local_files_only: bool = False, **kwargs) -> VLATTTPolicy`.
+**接口：**
+- 产出：不可变 `StateDictCompatibility`，含排序后的 `missing_keys`、`unexpected_keys`、`shape_mismatches` 及 `is_compatible: bool`。
+- 产出：`compare_state_dicts(source: Mapping[str, Tensor], target: Mapping[str, Tensor]) -> StateDictCompatibility`。
+- 产出：`load_state_dict_strict(target: nn.Module, source: Mapping[str, Tensor]) -> None`。
+- 产出：`VLATTTPolicy.from_pretrained(pretrained_name_or_path: str | Path, **kwargs) -> VLATTTPolicy`，只接受 `vla_ttt`。
+- 产出：`VLATTTPolicy.from_evo1_pretrained(pretrained_name_or_path: str | Path, *, revision: str | None = None, local_files_only: bool = False, **kwargs) -> VLATTTPolicy`。
 
-- [ ] **Step 1: Write failing state-dict diagnostic tests**
+- [ ] **步骤 1：编写失败的 state-dict 诊断测试**
 
-Create tiny fake modules and assert compatible dictionaries load exactly. In one incompatible input include one missing key, one unexpected key, and one shared key with a wrong shape; assert one exception contains all names, source/target shapes, and no target parameter changes.
+验证兼容字典精确加载；再用同时含 missing、unexpected、错误 shape 的输入验证单一异常列出全部名称与 source/target shape，且 target 参数未发生部分修改。
 
-- [ ] **Step 2: Write failing warm-start tests with mocked loaders**
+- [ ] **步骤 2：编写 mock warm-start 测试**
 
-Mock `Evo1Policy.from_pretrained` to return a tiny source policy. Assert `from_evo1_pretrained()` converts its config with `VLATTTConfig.from_evo1_config`, creates `VLATTTPolicy`, performs strict loading, forwards revision/local-only arguments, and returns a plugin whose serialized `policy.type` is `vla_ttt`.
+Mock `Evo1Policy.from_pretrained` 返回小型 policy；验证配置转换、插件构造、严格加载、revision/local-only 转发，以及返回配置的 `policy.type=vla_ttt`。
 
-- [ ] **Step 3: Pin both checkpoint entry points and wrong types before allocation**
+- [ ] **步骤 3：固定两种加载入口的类型检查**
 
-Mock lightweight config inspection. Assert `from_pretrained()` accepts `vla_ttt`, rejects `evo1` with an instruction to call `from_evo1_pretrained()`, and rejects an unrelated type with its observed value. Assert `from_evo1_pretrained()` accepts only `evo1` and rejects both `vla_ttt` and unrelated types before any model loader runs.
+验证 `from_pretrained()` 接受 `vla_ttt`，对 `evo1` 提示改用 `from_evo1_pretrained()`，并报告其他实际类型；验证 `from_evo1_pretrained()` 只接受 `evo1`。所有拒绝都发生在模型 loader 前。
 
-- [ ] **Step 4: Run focused tests and confirm failure**
+- [ ] **步骤 4：确认测试失败**
 
-Run: `uv run pytest tests/unit/test_checkpoint_mapping.py -v`
+运行：`uv run pytest tests/unit/test_checkpoint_mapping.py -v`
 
-Expected: FAIL because checkpoint helpers and the classmethod are absent.
+- [ ] **步骤 5：实现事务式严格加载**
 
-- [ ] **Step 5: Implement comparison and transactional strict loading**
+先比较 key 集合和 shape，再调用 `target.load_state_dict(source, strict=True)`；以确定顺序聚合全部差异，验证失败时不部分加载。
 
-Compare key sets and shapes before calling `target.load_state_dict(source, strict=True)`. Format all discrepancies in one deterministic error; never partially load when validation fails.
+- [ ] **步骤 6：实现两个加载路径**
 
-- [ ] **Step 6: Implement the two explicit loading paths**
+模型分配前轻量检查配置。`from_pretrained()` 类型正确时委托父 loader；`from_evo1_pretrained()` 通过 `Evo1Policy.from_pretrained` 加载，只转换配置，构造插件并严格复制 state dict。
 
-Use a lightweight config-file inspection before model allocation. For `from_pretrained()`, accept only `vla_ttt` and otherwise raise the targeted error before delegating to the inherited loader. For `from_evo1_pretrained()`, accept only `evo1`, load through `Evo1Policy.from_pretrained`, convert only the config, construct the plugin, and strictly copy the source state dict.
+- [ ] **步骤 7：运行测试并提交**
 
-- [ ] **Step 7: Run tests**
+运行：`uv run pytest tests/unit/test_checkpoint_mapping.py -v`
 
-Run: `uv run pytest tests/unit/test_checkpoint_mapping.py -v`
-
-Expected: PASS without network or real checkpoints.
-
-- [ ] **Step 8: Commit**
+预期：通过，不访问网络或真实 checkpoint。
 
 ```bash
 git add src/lerobot_policy_vla_ttt/checkpoint.py src/lerobot_policy_vla_ttt/modeling_vla_ttt.py tests/unit/test_checkpoint_mapping.py
 git commit -m "feat: strictly initialize from Evo-1 checkpoints"
 ```
 
-### Task 6: Self-Contained Plugin Checkpoint Conversion
+### 任务 6：自包含插件 Checkpoint 转换
 
-**Files:**
-- Modify: `src/lerobot_policy_vla_ttt/checkpoint.py`
-- Modify: `src/lerobot_policy_vla_ttt/__init__.py`
-- Create: `tests/unit/test_checkpoint_conversion.py`
+**文件：**
+- 修改：`src/lerobot_policy_vla_ttt/checkpoint.py`、`src/lerobot_policy_vla_ttt/__init__.py`
+- 新建：`tests/unit/test_checkpoint_conversion.py`
 
-**Interfaces:**
-- Consumes: `VLATTTPolicy.from_evo1_pretrained()` and both Task 3 processor factories.
-- Produces: `convert_evo1_checkpoint(source: str | Path, destination: Path, *, revision: str | None = None, local_files_only: bool = False) -> Path`.
-- The destination contains plugin policy config/weights, preprocessor, postprocessor, and `vla_ttt_conversion.json`; it has no runtime dependency on the source directory.
+**接口：**
+- 消费：`VLATTTPolicy.from_evo1_pretrained()` 与任务 3 的 processor factories。
+- 产出：`convert_evo1_checkpoint(source: str | Path, destination: Path, *, revision: str | None = None, local_files_only: bool = False) -> Path`。
+- destination 含插件配置/权重、preprocessor、postprocessor、`vla_ttt_conversion.json`，不再依赖 source。
 
-- [ ] **Step 1: Write a failing artifact-conversion test**
+- [ ] **步骤 1：编写失败的完整产物转换测试**
 
-Use temporary directories and fake policy/processors implementing LeRobot's `save_pretrained` contract. Assert each object saves once into the destination, the policy config says `vla_ttt`, metadata records source and revision, and deleting the fake source still permits the fake plugin checkpoint loader to load destination artifacts.
+用临时目录和假 policy/processors 验证每个对象保存一次、配置类型为 `vla_ttt`、metadata 记录 source/revision；删除假 source 后仍可从 destination 加载。
 
-- [ ] **Step 2: Test destination safety and source-type errors**
+- [ ] **步骤 2：测试 destination 与 source 安全性**
 
-Assert a non-empty destination is rejected without overwriting files. Assert a source tagged with an unrelated policy type fails before policy or processor construction and names both accepted source type `evo1` and the observed type.
+非空 destination 必须被拒绝且不覆盖文件；无关 policy 类型须在构造 policy/processor 前失败，并报告接受类型 `evo1` 与实际类型。
 
-- [ ] **Step 3: Run focused tests and confirm failure**
+- [ ] **步骤 3：确认测试失败**
 
-Run: `uv run pytest tests/unit/test_checkpoint_conversion.py -v`
+运行：`uv run pytest tests/unit/test_checkpoint_conversion.py -v`
 
-Expected: FAIL because `convert_evo1_checkpoint` is absent.
+- [ ] **步骤 4：用 LeRobot 公共 API 实现转换**
 
-- [ ] **Step 4: Implement conversion using LeRobot save/load APIs**
+从 source 加载上游 processors 并 warm-start policy；全部验证通过后才创建 destination；调用公开 `save_pretrained`，最后原子写入 metadata。不得手工复制 processor 文件或解释其 schema。
 
-Load the upstream processors from `source`, warm-start the plugin policy, create the destination only after all source artifacts validate, save with public `save_pretrained` methods, then atomically write JSON metadata. Do not manually copy LeRobot processor files or reinterpret their schemas.
+- [ ] **步骤 5：联合测试并提交**
 
-- [ ] **Step 5: Run checkpoint and processor tests together**
+运行：`uv run pytest tests/unit/test_checkpoint_mapping.py tests/unit/test_checkpoint_conversion.py tests/unit/test_processor_delegation.py -v`
 
-Run: `uv run pytest tests/unit/test_checkpoint_mapping.py tests/unit/test_checkpoint_conversion.py tests/unit/test_processor_delegation.py -v`
-
-Expected: PASS.
-
-- [ ] **Step 6: Commit**
+预期：全部通过。
 
 ```bash
 git add src/lerobot_policy_vla_ttt tests/unit/test_checkpoint_conversion.py
 git commit -m "feat: convert complete Evo-1 checkpoints"
 ```
 
-### Task 7: Real-Checkpoint Numerical Equivalence and Round Trip
+### 任务 7：真实 Checkpoint 数值等价性与 Round-Trip
 
-**Files:**
-- Create: `tests/integration/conftest.py`
-- Create: `tests/integration/test_evo1_equivalence.py`
-- Modify: `UPSTREAM.md`
+**文件：**
+- 新建：`tests/integration/conftest.py`、`tests/integration/test_evo1_equivalence.py`
+- 修改：`UPSTREAM.md`
 
-**Interfaces:**
-- Consumes: environment variable `VLA_TTT_EVO1_CHECKPOINT` as either a local path or pinned Hub repo; optional `VLA_TTT_EVO1_REVISION` is mandatory for Hub IDs.
-- Produces: pytest fixture `evo1_checkpoint() -> tuple[str, str | None]` that skips unless CUDA, bf16, and checkpoint configuration are available.
-- Produces: `make_synthetic_raw_batch(config: Evo1Config, *, batch_size: int = 1) -> dict[str, Any]`, derived from declared input features rather than hard-coded camera names.
+**接口：**
+- 消费：`VLA_TTT_EVO1_CHECKPOINT`（本地路径或固定 Hub repo）；Hub ID 必须同时提供 `VLA_TTT_EVO1_REVISION`。
+- 产出：`evo1_checkpoint() -> tuple[str, str | None]` fixture；缺少 CUDA、bf16 或配置时显式 skip。
+- 产出：`make_synthetic_raw_batch(config: Evo1Config, *, batch_size: int = 1) -> dict[str, Any]`，按 input features 构造，不硬编码 camera 名称。
 
-- [ ] **Step 1: Add opt-in fixture and download notification gate**
+- [ ] **步骤 1：添加 opt-in fixture 与下载告知闸门**
 
-If the checkpoint is absent locally, do not download it immediately. First run a Hub dry-run/metadata query, report the exact repo, revision, cache destination, total bytes, and largest files to the user, then proceed only after the notification. Record the confirmed repo and immutable revision in `UPSTREAM.md`.
+本地缺少 checkpoint 时不得立即下载。先查询 Hub dry-run/metadata，向用户报告 repo、revision、缓存目标、总字节数和最大文件；告知后才能继续。将不可变 revision 写入 `UPSTREAM.md`。
 
-- [ ] **Step 2: Write the failing equivalence test**
+- [ ] **步骤 2：编写等价性测试**
 
-Load native Evo-1 plus its processors and load `VLATTTPolicy.from_evo1_pretrained` from the same source. Preprocess one deterministic synthetic observation, reset both policies, restore the same CPU/CUDA RNG state before each `predict_action_chunk`, and assert identical shape plus `torch.testing.assert_close` at explicitly recorded bf16 tolerances.
+从同一 source 加载原生 Evo-1/processors 和插件；预处理确定性合成 observation，reset 两者，每次 `predict_action_chunk` 前恢复相同 CPU/CUDA RNG state；验证 shape 相同并以明确 bf16 tolerance 调用 `torch.testing.assert_close`。
 
-- [ ] **Step 3: Write the failing checkpoint round-trip test**
+- [ ] **步骤 3：编写 round-trip 测试**
 
-Convert to a temporary plugin checkpoint, delete all references to the loaded native policy, load plugin policy and processors with standard LeRobot discovery, reset both plugin instances, reuse identical RNG state, and assert equal action chunks. Call inference twice around `reset()` to verify inherited action-queue clearing.
+转换到临时插件 checkpoint，释放原生 policy，再经标准 discovery 加载插件及 processors。以相同 RNG 比较 action chunk；在 `reset()` 前后重复推理，验证 action queue 清空。
 
-- [ ] **Step 4: Run the integration tests**
+- [ ] **步骤 4：运行集成测试**
 
-Run: `uv run pytest -m integration tests/integration/test_evo1_equivalence.py -v -s`
+运行：`uv run pytest -m integration tests/integration/test_evo1_equivalence.py -v -s`
 
-Expected: both tests PASS on the RTX PRO 5000 72GB; missing local assets or GPU produce an explicit SKIP, never an implicit download from a CPU unit run.
+预期：RTX PRO 5000 72GB 上通过；缺少资产/GPU 时明确 skip，CPU 测试不得隐式下载。
 
-- [ ] **Step 5: Record the verified runtime matrix**
+- [ ] **步骤 5：记录运行时矩阵并提交**
 
-Update `UPSTREAM.md` with checkpoint revision, InternVL3 revision resolved by that checkpoint, PyTorch, Transformers, CUDA runtime, NVIDIA driver, GPU name, dtype, and measured tolerances.
-
-- [ ] **Step 6: Commit**
+在 `UPSTREAM.md` 记录 checkpoint/InternVL3 revision、PyTorch、Transformers、CUDA、驱动、GPU、dtype 和实测 tolerance。
 
 ```bash
 git add tests/integration/conftest.py tests/integration/test_evo1_equivalence.py UPSTREAM.md
 git commit -m "test: verify Evo-1 numerical equivalence"
 ```
 
-### Task 8: Standard LeRobot Training and Rollout Surface
+### 任务 8：标准 LeRobot 训练与 Rollout 接口
 
-**Files:**
-- Create: `README.md`
-- Create: `tests/integration/test_rollout_smoke.py`
-- Modify: `UPSTREAM.md`
+**文件：**
+- 新建：`README.md`、`tests/integration/test_rollout_smoke.py`
+- 修改：`UPSTREAM.md`
 
-**Interfaces:**
-- Consumes: LeRobot's unmodified `lerobot-train` and `lerobot-rollout` console commands.
-- Consumes: `VLA_TTT_LIBERO_CHECKPOINT`, immutable `VLA_TTT_LIBERO_REVISION`, and any benchmark asset variables required by LeRobot 0.6.1.
-- Produces no project-owned trainer, dataset wrapper, rollout loop, robot transport, or action queue.
+**接口：**
+- 消费：未经修改的 `lerobot-train`、`lerobot-rollout`。
+- 消费：`VLA_TTT_LIBERO_CHECKPOINT`、`VLA_TTT_LIBERO_REVISION` 及 LeRobot 0.6.1 所需 benchmark 资产变量。
+- 不产出自定义 trainer、dataset wrapper、rollout loop、transport 或 action queue。
 
-- [ ] **Step 1: Write README commands against public LeRobot CLIs**
+- [ ] **步骤 1：编写 README**
 
-Document installation, `policy.type=vla_ttt` Stage-1 training on `lerobot/libero`, Python checkpoint conversion, plugin-native resume, standard rollout, fast/unit versus opt-in integration tests, supported versions, non-affiliation, and the rule that model/data downloads are announced first. Mark commands needing external assets clearly.
+说明安装、`policy.type=vla_ttt` 的 LIBERO Stage-1 训练、Python checkpoint 转换、插件 resume、标准 rollout、测试分层、支持版本、非隶属声明和下载前告知规则；标明需要外部资产的命令。
 
-- [ ] **Step 2: Add a CLI configuration smoke test**
+- [ ] **步骤 2：添加 CLI 配置冒烟测试**
 
-Invoke both LeRobot CLIs only through argument/config parsing with heavyweight constructors mocked. Assert the training path selects `VLATTTConfig` while retaining LeRobotDataset, and the rollout path selects the plugin policy and plugin processor factory from a plugin checkpoint.
+Mock 重型构造器后只运行参数/配置解析；验证训练选择 `VLATTTConfig` 且保留 LeRobotDataset，rollout 从插件 checkpoint 选择插件 policy 与 processor factory。
 
-- [ ] **Step 3: Add the opt-in one-episode LIBERO test**
+- [ ] **步骤 3：添加 opt-in 单 episode LIBERO 测试**
 
-Run the standard LeRobot rollout entry point with the base strategy, batch size 1, one episode, and a fixed seed. Assert successful reset, at least one correctly shaped action, and normal episode termination; do not duplicate the loop in test or package code.
+用标准 rollout 入口运行 base strategy、batch size 1、一个 episode、固定 seed；验证 reset、至少一个正确 shape 的 action 和正常结束，不复制 rollout loop。
 
-- [ ] **Step 4: Apply the model/data download gate**
+- [ ] **步骤 4：执行下载告知闸门**
 
-Before fetching any missing LIBERO policy, dataset, environment asset, or benchmark bundle, report its repository/URL, immutable revision/checksum, destination, and dry-run byte estimate to the user. After use, record exact revisions in `UPSTREAM.md`; keep all artifacts outside Git.
+获取任何 LIBERO policy、dataset、环境资产或 benchmark bundle 前，报告仓库/URL、revision/checksum、目标位置和 dry-run 字节数；使用后记录在 `UPSTREAM.md`，资产保留在 Git 外。
 
-- [ ] **Step 5: Run smoke and full CPU suites**
+- [ ] **步骤 5：运行测试**
 
-Run: `uv run pytest tests/unit -v`
+运行：`uv run pytest tests/unit -v`
 
-Expected: all unit tests PASS with network disabled.
+预期：禁网时全部通过。
 
-Run: `uv run pytest -m "integration and libero" tests/integration/test_rollout_smoke.py -v -s`
+运行：`uv run pytest -m "integration and libero" tests/integration/test_rollout_smoke.py -v -s`
 
-Expected: PASS when explicitly provisioned; otherwise an explanatory SKIP.
+预期：资产已配置时通过，否则明确 skip。
 
-- [ ] **Step 6: Verify the repository contains no copied upstream or large assets**
+- [ ] **步骤 6：确认没有上游副本或大型资产**
 
-Run: `git status --short && git ls-files | sort && find . -type f -size +10M -not -path './.git/*' -print`
+运行：`git status --short && git ls-files | sort && find . -type f -size +10M -not -path './.git/*' -print`
 
-Expected: only intended source/docs/tests/lock files are tracked, and no file over 10 MiB is reported.
+预期：仅跟踪预期源码/文档/测试/lock 文件，没有超过 10 MiB 的文件。
 
-- [ ] **Step 7: Commit**
+- [ ] **步骤 7：提交**
 
 ```bash
 git add README.md UPSTREAM.md tests/integration/test_rollout_smoke.py
 git commit -m "docs: document LeRobot training and rollout workflow"
 ```
 
-### Task 9: Final Acceptance Verification
+### 任务 9：最终验收
 
-**Files:**
-- Modify only files required by verified defects; do not broaden scope.
+**文件：**
+- 只修改验证发现的缺陷所必需的文件，不扩大范围。
 
-**Interfaces:**
-- Consumes: all interfaces and tests from Tasks 1-8.
-- Produces: a clean, reproducible milestone satisfying all seven acceptance criteria in the spec.
+**接口：**
+- 消费：任务 1–8 的全部接口与测试。
+- 产出：满足规格七项验收标准的干净、可复现里程碑。
 
-- [ ] **Step 1: Run formatting and static checks configured in `pyproject.toml`**
+- [ ] **步骤 1：运行格式与静态检查**
 
-Run: `uv run ruff check . && uv run ruff format --check .`
+运行：`uv run ruff check . && uv run ruff format --check .`
 
-Expected: PASS.
+预期：通过。
 
-- [ ] **Step 2: Run the network-free suite**
+- [ ] **步骤 2：运行无网络测试集**
 
-Run: `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 uv run pytest tests/unit -v`
+运行：`HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 uv run pytest tests/unit -v`
 
-Expected: PASS, proving unit tests cannot download weights or data.
+预期：通过，证明单元测试不下载权重或数据。
 
-- [ ] **Step 3: Build and inspect the wheel**
+- [ ] **步骤 3：构建并检查 wheel**
 
-Run: `uv build && unzip -l dist/lerobot_policy_vla_ttt-*.whl`
+运行：`uv build && unzip -l dist/lerobot_policy_vla_ttt-*.whl`
 
-Expected: wheel contains only plugin source and distribution metadata; no tests, model weights, datasets, outputs, or LeRobot source tree.
+预期：wheel 只含插件源码和分发元数据，不含测试、模型、数据、输出或 LeRobot 源码树。
 
-- [ ] **Step 4: Test installation in a fresh temporary environment**
+- [ ] **步骤 4：在全新环境验证安装**
 
-Install the built wheel into a temporary Python 3.12 environment, import `lerobot_policy_vla_ttt`, and run the public discovery check for `vla_ttt` without a LeRobot repository checkout.
+将 wheel 安装到临时 Python 3.12 环境，不依赖 LeRobot checkout；导入插件并运行公开 `vla_ttt` discovery 检查。
 
-Expected: import and discovery PASS.
+预期：导入与发现通过。
 
-- [ ] **Step 5: Run provisioned GPU tests if assets were approved and made available**
+- [ ] **步骤 5：若资产已告知并配置，运行 GPU 测试**
 
-Run: `uv run pytest -m integration tests/integration -v -s`
+运行：`uv run pytest -m integration tests/integration -v -s`
 
-Expected: equivalence, round trip, and LIBERO smoke PASS; otherwise report precisely which tests skipped and why, without claiming GPU acceptance.
+预期：等价性、round-trip、LIBERO smoke 全部通过；否则准确报告 skip 原因，不宣称已完成 GPU 验收。
 
-- [ ] **Step 6: Review acceptance evidence and working tree**
+- [ ] **步骤 6：检查验收证据和工作树**
 
-Run: `git status --short && git log --oneline --decorate -12`
+运行：`git status --short && git log --oneline --decorate -12`
 
-Expected: no unexplained changes and one focused commit per completed task.
+预期：无无法解释的改动，每个已完成任务有一个聚焦提交。
 
-- [ ] **Step 7: Commit verification-only fixes if necessary**
+- [ ] **步骤 7：如有必要，提交验证修复**
 
 ```bash
 git add <only-the-files-fixed-during-verification>
 git commit -m "fix: address plugin acceptance findings"
 ```
 
-Skip this commit when verification required no code or documentation changes.
+若验证没有引起代码或文档修改，则跳过此提交。
