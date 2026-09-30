@@ -8,12 +8,14 @@
 | Evo-1 checkpoint | 尚未验证 | 尚未下载 |
 | InternVL3 checkpoint | 尚未验证 | 尚未下载 |
 | LIBERO dataset/assets | 尚未验证 | 尚未下载 |
-| Python | `3.12` | 待验证 |
-| PyTorch | 尚未验证 | 尚未验证 |
-| Transformers | 尚未验证 | 尚未验证 |
+| Python | `3.12.2`（uv managed） | CPU 单元测试已验证 |
+| PyTorch | `2.11.0+cu130`（由 `uv.lock` 固定） | CPU 单元测试已验证；CUDA 尚未验证 |
+| Transformers | `5.5.4`（由 `uv.lock` 固定） | 导入已验证；真实模型尚未验证 |
 | CUDA runtime | 尚未验证 | 尚未验证 |
 | NVIDIA driver | 尚未验证 | 尚未验证 |
 | GPU | RTX PRO 5000 72GB（用户提供） | 尚未运行集成测试 |
+
+当前执行环境未设置 `VLA_TTT_EVO1_CHECKPOINT`，且 `nvidia-smi` 无法连接驱动；因此真实 checkpoint 数值等价性测试保持显式 skip，不能据此宣称 GPU 验证完成。
 
 ## 下载规则
 
