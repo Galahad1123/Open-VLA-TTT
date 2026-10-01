@@ -59,7 +59,7 @@ def test_one_libero_episode_through_standard_lerobot_eval() -> None:
         if os.getenv("VLA_TTT_ALLOW_DOWNLOAD") != "1":
             pytest.skip("Hub downloads remain disabled until their dry-run size is reported")
     pytest.importorskip("libero", reason="install with: uv sync --extra libero")
-    executable = shutil.which("lerobot-eval")
+    executable = shutil.which("vla-ttt-eval")
     assert executable is not None
 
     command = [

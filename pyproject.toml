@@ -19,6 +19,17 @@ dependencies = [
 [project.optional-dependencies]
 libero = ["lerobot[libero]==0.6.1"]
 
+[project.scripts]
+vla-ttt-train = "lerobot_policy_vla_ttt.cli:train"
+vla-ttt-eval = "lerobot_policy_vla_ttt.cli:evaluate"
+vla-ttt-rollout = "lerobot_policy_vla_ttt.cli:rollout"
+
+[tool.ruff.lint.per-file-ignores]
+"src/lerobot_policy_vla_ttt/evo1/*.py" = ["E501", "UP", "B", "I"]
+
+[tool.ruff.format]
+exclude = ["src/lerobot_policy_vla_ttt/evo1/*.py"]
+
 [dependency-groups]
 dev = [
     "pytest>=8.3,<10",

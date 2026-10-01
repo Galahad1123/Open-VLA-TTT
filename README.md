@@ -2,7 +2,7 @@
 
 `lerobot-policy-vla-ttt` 是一个独立的 LeRobot out-of-tree policy plugin，用于在 Evo-1 基线上研究 VLA 的测试时训练（TTT）。当前里程碑只建立可复现的 Evo-1 基线与扩展边界，尚未实现 RoboTTT、TTT-Linear、TTT-MLP、Titans、长序列采样或 TBPTT。
 
-本项目依赖 LeRobot，但不隶属于 Hugging Face、Evo-1 作者或其关联机构。仓库不包含 LeRobot 源码、模型权重或数据集。
+本项目依赖 LeRobot，但不隶属于 Hugging Face、Evo-1 作者或其关联机构。仓库包含从 LeRobot 0.6.1 一次性迁入的 Evo-1 专属源码，保留原始许可证和版权头；不包含模型权重或数据集。
 
 ## 环境与安装
 
@@ -25,7 +25,7 @@ uv sync --frozen --extra libero
 下面的命令直接使用 LeRobotDataset、Evo-1 processor、训练循环和 checkpoint API：
 
 ```bash
-uv run lerobot-train \
+uv run vla-ttt-train \
   --policy.type=vla_ttt \
   --policy.training_stage=stage1 \
   --policy.device=cuda \
@@ -37,10 +37,10 @@ uv run lerobot-train \
 
 运行该命令可能下载 `lerobot/libero` 数据集和 InternVL3/Evo-1 相关模型。按本项目规则，首次下载前应先确认 repo、不可变 revision、缓存位置和 dry-run 体积。
 
-插件 checkpoint 可继续通过标准训练 CLI resume；具体 `--config_path` 应指向 LeRobot 保存的 `train_config.json` 或对应 `pretrained_model/` 目录：
+插件 checkpoint 可通过项目的薄训练入口 resume；具体 `--config_path` 应指向 LeRobot 保存的 `train_config.json` 或对应 `pretrained_model/` 目录：
 
 ```bash
-uv run lerobot-train \
+uv run vla-ttt-train \
   --config_path=outputs/evo1-baseline/checkpoints/last/train_config.json \
   --resume=true
 ```
@@ -70,20 +70,20 @@ convert_evo1_checkpoint(
 
 ## Rollout 与 LIBERO 评测
 
-真实机器人部署继续使用 LeRobot 0.6.1 的标准 `lerobot-rollout`；本项目不实现机器人循环、transport 或 action queue：
+真实机器人部署通过 `vla-ttt-rollout` 调用 LeRobot 0.6.1 的 rollout 框架；本地 Evo-1 保留原始 action queue 行为：
 
 ```bash
-uv run lerobot-rollout \
+uv run vla-ttt-rollout \
   --strategy.type=base \
   --policy.path=/path/to/vla-ttt-checkpoint \
   --robot.type=<robot-type> \
   --task="<instruction>"
 ```
 
-LeRobot 0.6.1 的 LIBERO 仿真入口是 `lerobot-eval`，它复用相同 policy、processor 和 rollout/evaluation 基础设施：
+`vla-ttt-eval` 调用 LeRobot 0.6.1 的仿真评测框架：
 
 ```bash
-uv run lerobot-eval \
+uv run vla-ttt-eval \
   --policy.path=/path/to/vla-ttt-checkpoint \
   --env.type=libero \
   --env.task=libero_spatial \
@@ -119,3 +119,41 @@ uv run pytest -m "integration and libero" tests/integration/test_rollout_smoke.p
 ## 上游与许可证
 
 受支持的精确版本与验证状态见 [`UPSTREAM.md`](UPSTREAM.md)。本项目采用 Apache-2.0 许可证。
+
+## 本地 Evo-1 固定快照
+
+模型源码位于 `src/lerobot_policy_vla_ttt/evo1/`，保留上游七个文件的原名。
+`VLATTTConfig` / `VLATTTPolicy` 继承本地配置与 policy，实际执行本地
+`Evo1Model`、`InternVL3Embedder` 和 `FlowmatchingActionHead`。
+InternVL3 底层 Transformer 仍由 Transformers 提供。
+
+`policy.type=evo1` 保留原生 LeRobot 基线；`policy.type=vla_ttt` 使用本地基线。
+来源与导入时的必要修改见 [UPSTREAM.md](UPSTREAM.md)。此快照不主动追踪上游更新。
+
+### CLI 与 processor 恢复
+
+本地配置不继承上游 Evo1Config，因此 LeRobot 0.6.1 通用 factory 中针对上游类型的
+checkpoint reconciliation 不会触发。请对本地模型使用上述 `vla-ttt-*` 入口：
+它们仅在运行期间替换 runner 模块内的 processor factory 引用，结束后恢复；
+训练、dataset、评测和机器人运行循环仍由 LeRobot 提供。该适配只用于单个 CLI
+进程，不用于同一进程内的并发 runner。
+
+直接调用上游 CLI 虽然能发现插件，但恢复本地 checkpoint 时不能保证自定义字段、
+统计量 padding 和动作后处理覆盖项完整生效。Python 调用方应使用：
+
+```python
+from lerobot_policy_vla_ttt.cli import make_pre_post_processors
+
+pre, post = make_pre_post_processors(
+    policy.config,
+    pretrained_path="/path/to/checkpoint",
+    local_files_only=True,
+)
+```
+
+本地 Evo-1 processor steps 使用 `vla_ttt_evo1_*` 注册名。恢复旧 checkpoint 时，
+本地 loader 将原来的 `evo1_*` steps 转为等价本地类；原生注册项保持不变。
+模型参数路径与 tensor shape 保持一致，权重严格加载，不使用宽松 key 匹配。
+
+后续研究顺序：RoboTTT → Titans；RoboMME 为主评测、RMBench 为第二评测、
+LIBERO 为回归评测。server-client 模式后续参考 StarVLA，本次未实现。

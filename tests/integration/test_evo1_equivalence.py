@@ -57,8 +57,37 @@ def test_native_evo1_and_plugin_are_numerically_equivalent(
     _restore_rng(state)
     plugin_actions = plugin.predict_action_chunk(plugin_batch)
 
+    assert type(plugin.model).__module__.startswith("lerobot_policy_vla_ttt.evo1.")
+    assert type(plugin.model.action_head).__module__.startswith("lerobot_policy_vla_ttt.evo1.")
+    assert type(plugin.model.embedder).__module__.startswith("lerobot_policy_vla_ttt.evo1.")
+    assert native.state_dict().keys() == plugin.state_dict().keys()
     assert native_actions.shape == plugin_actions.shape
     torch.testing.assert_close(native_actions, plugin_actions, atol=ATOL, rtol=RTOL)
+
+    # Training-mode loss and action-head gradients, with the same stochastic state.
+    action_dim = native.config.output_features["action"].shape[-1]
+    raw_batch["action"] = torch.zeros(1, native.config.chunk_size, action_dim)
+    native_batch = native_pre(raw_batch)
+    plugin_batch = plugin_pre(raw_batch)
+    native.train()
+    plugin.train()
+    state = _rng_state()
+    native_loss, native_info = native(native_batch)
+    native_loss.backward()
+    _restore_rng(state)
+    plugin_loss, plugin_info = plugin(plugin_batch)
+    plugin_loss.backward()
+    torch.testing.assert_close(native_loss, plugin_loss, atol=ATOL, rtol=RTOL)
+    assert native_info["active_action_dims"] == plugin_info["active_action_dims"]
+    native_params = dict(native.model.action_head.named_parameters())
+    compared = 0
+    for name, param in plugin.model.action_head.named_parameters():
+        reference = native_params[name].grad
+        assert (param.grad is None) == (reference is None)
+        if reference is not None:
+            torch.testing.assert_close(param.grad, reference, atol=ATOL, rtol=RTOL)
+            compared += 1
+    assert compared > 0
 
 
 @pytest.mark.integration
@@ -78,9 +107,10 @@ def test_plugin_checkpoint_round_trip_preserves_output_and_reset(
         checkpoint,
         revision=revision,
     )
-    reloaded_pre, _ = make_pre_post_processors(
+    reloaded_pre, _ = make_vla_ttt_pre_post_processors_from_pretrained(
         reloaded.config,
-        pretrained_path=str(converted),
+        converted,
+        local_files_only=True,
     )
     raw_batch = synthetic_batch_factory(original.config)
     original_batch = original_pre(raw_batch)

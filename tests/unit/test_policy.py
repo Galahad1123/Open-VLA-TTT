@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import pytest
-from lerobot.policies.evo1.modeling_evo1 import Evo1Policy
 
 from lerobot_policy_vla_ttt import modeling_vla_ttt
 from lerobot_policy_vla_ttt.configuration_vla_ttt import VLATTTConfig
+from lerobot_policy_vla_ttt.evo1.modeling_evo1 import Evo1Policy
 from lerobot_policy_vla_ttt.modeling_vla_ttt import VLATTTPolicy
 
 

@@ -11,6 +11,7 @@ from torch import nn
 
 from lerobot_policy_vla_ttt.checkpoint import compare_state_dicts, load_state_dict_strict
 from lerobot_policy_vla_ttt.configuration_vla_ttt import VLATTTConfig
+from lerobot_policy_vla_ttt.evo1.modeling_evo1 import Evo1Policy as LocalEvo1Policy
 from lerobot_policy_vla_ttt.modeling_vla_ttt import VLATTTPolicy
 
 
@@ -18,6 +19,7 @@ class TinyVLATTTPolicy(VLATTTPolicy):
     def __init__(self, config: VLATTTConfig, **kwargs) -> None:
         nn.Module.__init__(self)
         self.config = config
+        self.model = nn.Identity()
         self.weight = nn.Parameter(torch.zeros(2, 2))
 
 
@@ -87,6 +89,7 @@ def test_from_evo1_pretrained_strictly_warm_starts_plugin(
         return source_policy
 
     monkeypatch.setattr(Evo1Policy, "from_pretrained", classmethod(fake_load))
+    monkeypatch.setattr(LocalEvo1Policy, "from_pretrained", classmethod(fake_load))
 
     policy = TinyVLATTTPolicy.from_evo1_pretrained(
         source_path,
@@ -95,6 +98,7 @@ def test_from_evo1_pretrained_strictly_warm_starts_plugin(
     )
 
     assert isinstance(policy, TinyVLATTTPolicy)
+    assert not policy.training
     assert policy.config.type == "vla_ttt"
     assert torch.equal(policy.weight, source_policy.weight)
     assert calls == [
@@ -120,6 +124,7 @@ def test_checkpoint_entry_points_reject_non_strict_loading(
         return object()
 
     monkeypatch.setattr(Evo1Policy, "from_pretrained", classmethod(fake_load))
+    monkeypatch.setattr(LocalEvo1Policy, "from_pretrained", classmethod(fake_load))
 
     with pytest.raises(ValueError, match="strict=True"):
         getattr(TinyVLATTTPolicy, loader)(source_path, strict=False)
@@ -140,6 +145,7 @@ def test_checkpoint_entry_points_reject_wrong_types_before_loading(
         return object()
 
     monkeypatch.setattr(Evo1Policy, "from_pretrained", classmethod(fake_load))
+    monkeypatch.setattr(LocalEvo1Policy, "from_pretrained", classmethod(fake_load))
 
     assert TinyVLATTTPolicy.from_pretrained(plugin_path) is not None
     assert load_calls == [str(plugin_path)]

@@ -5,11 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from lerobot.policies.evo1.modeling_evo1 import Evo1Policy
+from lerobot.policies.evo1.modeling_evo1 import Evo1Policy as UpstreamEvo1Policy
 
 from .checkpoint import checkpoint_policy_type, load_state_dict_strict
 from .compatibility import ensure_supported_lerobot_version
 from .configuration_vla_ttt import VLATTTConfig
+from .evo1.modeling_evo1 import Evo1Policy
 
 
 class VLATTTPolicy(Evo1Policy):
@@ -85,7 +86,7 @@ class VLATTTPolicy(Evo1Policy):
                 f"from_evo1_pretrained requires checkpoint type 'evo1', got {policy_type!r}."
             )
 
-        source_policy = Evo1Policy.from_pretrained(
+        source_policy = UpstreamEvo1Policy.from_pretrained(
             pretrained_name_or_path,
             revision=revision,
             local_files_only=local_files_only,
@@ -97,4 +98,5 @@ class VLATTTPolicy(Evo1Policy):
             constructor_kwargs["vlm_hub_kwargs"] = kwargs["vlm_hub_kwargs"]
         policy = cls(config, **constructor_kwargs)
         load_state_dict_strict(policy, source_policy.state_dict())
+        policy.eval()
         return policy

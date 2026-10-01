@@ -1,4 +1,4 @@
-"""Processor entry points delegated to LeRobot's Evo-1 implementation."""
+"""Local Evo-1 processors using LeRobot's generic pipeline infrastructure."""
 
 from __future__ import annotations
 
@@ -6,10 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from lerobot.policies.evo1.processor_evo1 import (
-    make_evo1_pre_post_processors,
-    reconcile_evo1_processors,
-)
 from lerobot.policies.factory import _reconnect_relative_absolute_steps, make_pre_post_processors
 from lerobot.processor import (
     PolicyProcessorPipeline,
@@ -24,13 +20,35 @@ from lerobot.utils.constants import (
 )
 
 from .configuration_vla_ttt import VLATTTConfig
+from .evo1.processor_evo1 import (
+    Evo1ActionProcessorStep,
+    Evo1PadActionProcessorStep,
+    Evo1PadStateProcessorStep,
+    make_evo1_pre_post_processors,
+    reconcile_evo1_processors,
+)
+
+
+def _localize_steps(pipeline: PolicyProcessorPipeline) -> None:
+    """Migrate legacy checkpoint step names without changing the upstream registry."""
+    replacements = {
+        "evo1_pad_state_processor": Evo1PadStateProcessorStep,
+        "evo1_pad_action_processor": Evo1PadActionProcessorStep,
+        "evo1_action_processor": Evo1ActionProcessorStep,
+    }
+    pipeline.steps = [
+        replacements[step._registry_name](**step.get_config())
+        if getattr(step, "_registry_name", None) in replacements
+        else step
+        for step in pipeline.steps
+    ]
 
 
 def make_vla_ttt_pre_post_processors(
     config: VLATTTConfig,
     dataset_stats: dict[str, dict[str, torch.Tensor]] | None = None,
 ) -> tuple[PolicyProcessorPipeline, PolicyProcessorPipeline]:
-    """Build processors through the upstream Evo-1 factory."""
+    """Build processors through the local Evo-1 factory."""
     return make_evo1_pre_post_processors(config, dataset_stats=dataset_stats)
 
 
@@ -52,7 +70,7 @@ def make_vla_ttt_pre_post_processors_from_pretrained(
     cache_dir: str | Path | None = None,
     local_files_only: bool = False,
 ) -> tuple[PolicyProcessorPipeline, PolicyProcessorPipeline]:
-    """Load processors through LeRobot's generic loader and Evo-1 reconciliation path."""
+    """Load serialized pipelines and restore the local Evo-1 processing semantics."""
     needs_explicit_hub_options = any(
         (
             force_download,
@@ -89,9 +107,11 @@ def make_vla_ttt_pre_post_processors_from_pretrained(
             to_output=transition_to_policy_action,
         )
         _reconnect_relative_absolute_steps(preprocessor, postprocessor)
+        _localize_steps(preprocessor)
+        _localize_steps(postprocessor)
         return reconcile_evo1_processors(config, preprocessor, postprocessor)
 
-    return make_pre_post_processors(
+    preprocessor, postprocessor = make_pre_post_processors(
         policy_cfg=config,
         pretrained_path=str(pretrained_path),
         pretrained_revision=revision,
@@ -102,3 +122,6 @@ def make_vla_ttt_pre_post_processors_from_pretrained(
         preprocessor_config_filename=preprocessor_config_filename,
         postprocessor_config_filename=postprocessor_config_filename,
     )
+    _localize_steps(preprocessor)
+    _localize_steps(postprocessor)
+    return reconcile_evo1_processors(config, preprocessor, postprocessor)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -77,6 +78,8 @@ def test_pretrained_factory_forwards_every_argument(monkeypatch: pytest.MonkeyPa
         return expected
 
     monkeypatch.setattr(processor_vla_ttt, "make_pre_post_processors", fake_factory)
+    monkeypatch.setattr(processor_vla_ttt, "_localize_steps", lambda pipeline: None)
+    monkeypatch.setattr(processor_vla_ttt, "reconcile_evo1_processors", lambda *args: expected)
 
     result = processor_vla_ttt.make_vla_ttt_pre_post_processors_from_pretrained(
         config,
@@ -110,8 +113,8 @@ def test_pretrained_factory_enforces_local_only_for_both_pipelines(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config = _config()
-    preprocessor = object()
-    postprocessor = object()
+    preprocessor = SimpleNamespace(steps=[])
+    postprocessor = SimpleNamespace(steps=[])
     calls: list[dict[str, object]] = []
 
     def fake_load(cls, **kwargs):
@@ -155,9 +158,11 @@ def test_fresh_and_pretrained_paths_preserve_evo1_stat_padding(tmp_path) -> None
         config, dataset_stats=stats
     )
 
-    assert [type(step) for step in plugin_pre.steps] == [type(step) for step in upstream_pre.steps]
-    assert [type(step) for step in plugin_post.steps] == [
-        type(step) for step in upstream_post.steps
+    assert [type(step).__name__ for step in plugin_pre.steps] == [
+        type(step).__name__ for step in upstream_pre.steps
+    ]
+    assert [type(step).__name__ for step in plugin_post.steps] == [
+        type(step).__name__ for step in upstream_post.steps
     ]
     assert _normalization_shapes(plugin_pre) == [(24,), (24,), (24,), (24,)]
     assert _normalization_shapes(plugin_post) == [(24,), (24,), (24,), (24,)]
