@@ -1,0 +1,13 @@
+{
+  "starvla_reference": "4507931a625c844404c4a76128fb116536d8ca7c",
+  "robomme_benchmark": "c85e060c830a72571f9517b6dd683d51e154490e",
+  "maniskill_fork": "07be6fbc66350ddca200abfb0a11b692f078f7fd",
+  "hf_libero": "0.1.4",
+  "assets": [
+    {"repo": "zuoxingdong/evo1_libero", "type": "model", "revision": "515921f4a2c1d3f3ad523721eafa26fdf2af315b"},
+    {"repo": "OpenGVLab/InternVL3-1B-hf", "type": "model", "revision": "014c0583a0d4bedf29fbe2dbff4f865eb998e171"},
+    {"repo": "lerobot/libero-assets", "type": "dataset", "revision": "0b3ea86be5fe169d0fd036ae63d1070ec09e90f6", "full_bytes": 422320936},
+    {"repo": "HuggingFaceVLA/libero", "type": "dataset", "revision": "86958911c0f959db2bbbdb107eb3e17c5f9c798e", "full_bytes": 34926157548},
+    {"repo": "lerobot/robomme", "type": "dataset", "revision": "92796abbc67db4ea6447e5031d04bf47aa3770bb", "full_bytes": 9577307835}
+  ]
+}

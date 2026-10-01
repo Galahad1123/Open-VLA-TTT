@@ -1,0 +1,16 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vla-ttt-eval-client"
+version = "0.1.0"
+description = "Lightweight simulator-side client for VLA-TTT evaluation"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.26,<3", "msgpack==1.1.2", "websockets==15.0.1"]
+
+[project.scripts]
+vla-ttt-benchmark = "vla_ttt_eval.runner:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vla_ttt_eval"]

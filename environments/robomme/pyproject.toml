@@ -1,0 +1,11 @@
+[project]
+name = "vla-ttt-robomme-env"
+version = "0.1.0"
+requires-python = ">=3.11,<3.12"
+dependencies = ["vla-ttt-eval-client", "robomme", "mani-skill", "numpy==1.26.4"]
+
+[tool.uv.sources]
+vla-ttt-eval-client = { path = "../../packages/eval-client", editable = true }
+robomme = { git = "https://github.com/RoboMME/robomme_benchmark.git", rev = "c85e060c830a72571f9517b6dd683d51e154490e" }
+# uv does not inherit source overrides from dependencies: repeat the official fork here.
+mani-skill = { git = "https://github.com/YinpeiDai/ManiSkill.git", rev = "07be6fbc66350ddca200abfb0a11b692f078f7fd" }

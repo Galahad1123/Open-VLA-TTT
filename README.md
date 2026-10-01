@@ -6,16 +6,21 @@
 
 ## 环境与安装
 
+RoboMME / LIBERO 的**训练与 server-client 评测**见 [baseline 操作指南](docs/baselines.md)。
+policy、LIBERO、RoboMME 使用三个独立虚拟环境；下方旧的单环境 eval 入口仍保留用于兼容。
+已完成真实数据两步训练和闭环 smoke，尚未完成正式多任务 baseline 实验。
+
 要求 Python `>=3.12,<3.14`，当前严格支持 `lerobot==0.6.1`。
 
 ```bash
 uv sync --frozen
 ```
 
-LIBERO 是可选环境，不进入默认开发环境：
+当前推荐独立安装仿真环境（不把 LIBERO/RoboMME 装入 policy 环境）：
 
 ```bash
-uv sync --frozen --extra libero
+uv sync --frozen --project environments/libero
+uv sync --frozen --project environments/robomme
 ```
 
 安装后，LeRobot 会通过包名前缀与配置注册自动发现 `policy.type=vla_ttt`，无需 clone 或修改 LeRobot 仓库。
@@ -81,6 +86,8 @@ uv run vla-ttt-rollout \
 ```
 
 `vla-ttt-eval` 调用 LeRobot 0.6.1 的仿真评测框架：
+
+以下是保留的单环境入口，需要自行安装 `--extra libero`；隔离环境实验请用上方 baseline 指南中的 server-client 入口。
 
 ```bash
 uv run vla-ttt-eval \
@@ -156,4 +163,4 @@ pre, post = make_pre_post_processors(
 模型参数路径与 tensor shape 保持一致，权重严格加载，不使用宽松 key 匹配。
 
 后续研究顺序：RoboTTT → Titans；RoboMME 为主评测、RMBench 为第二评测、
-LIBERO 为回归评测。server-client 模式后续参考 StarVLA，本次未实现。
+LIBERO 为回归评测。参考 StarVLA 的 server-client baseline 已实现，见 [操作指南](docs/baselines.md)。
