@@ -46,3 +46,12 @@ Stage 1 初始化来源：`artifacts/init/libero-evo1-groot-smoke`，预训练 V
 独立只读审查发现/确认两项 Important（配置语义、AMP），均已修复并回归；无 Critical、无延期 Minor。没有为此修改原生/本地 Evo-1 代码或 LeRobot 安装包。
 
 操作入口及配置解释见 [evo1_groot 指南](../evo1-groot-baseline.md)。下一步是固定公平对照预算开展正式无记忆训练/评测，再接入 RoboTTT；当前没有 TTT memory，也没有新模型的 benchmark 成功率。
+
+## Foundation 集成与交接
+
+2026-10-05，按用户要求将 `56b55f2`、`d952130` 快进合入 `feat/evo1-plugin-foundation`。实现、配置、测试和文档现已位于 foundation；未修改原 `evo1/` 快照。
+
+- 在 foundation 根目录使用现有 `.venv`，不设置跨工作树 `PYTHONPATH`，完整离线测试 **68 passed、6 skipped**。
+- 实际包路径指向 foundation 的 `src/lerobot_policy_vla_ttt`；factory 分别解析 `evo1`、`vla_ttt`、`evo1_groot`。初始化与评测服务 CLI help 正常，新评测 implementation 可用。
+- 合并前已有的 roadmap、架构笔记与三份 LIBERO 实验文档，共 5 份未提交文件，合并后 SHA256 全部保持一致；未将这些其他会话的修改纳入本次提交。
+- 原开发工作树及其 ignored smoke 资产保留，未移动/删除权重，也未在 foundation 启动新的训练或评测。后续训练会话从 foundation 新建实验目录；本会话后续在同一项目内接入 RoboTTT。

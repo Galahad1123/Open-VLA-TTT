@@ -2,6 +2,10 @@
 
 `policy.type=evo1_groot` 是预训练 InternVL3 + 随机初始化轻量 GR00T-style action expert 的**无记忆**模型。它与原生 `evo1`、本地快照 `vla_ttt` 分别注册、训练和保存，不用于证明原生/本地 Evo-1 数值等价。尚未完成任务训练或成功率评测。
 
+2026-10-05 已将实现提交 `56b55f2`、`d952130` 快进合入 `feat/evo1-plugin-foundation`。训练与后续 RoboTTT 开发统一使用 `/home/hello/lizk/vlas/vla-ttt/.worktrees/evo1-plugin-foundation`；模型代码位于该工作树的 `src/lerobot_policy_vla_ttt/models/evo1_groot/`，现有 `.venv` 已能直接发现新策略。原 `evo1-groot-baseline` 工作树仅保留开发历史和 smoke 资产，不是第二个独立项目。
+
+交接训练会话时，从 foundation 根目录使用下文的初始化/训练入口；现有环境可直接用 `.venv/bin/python` 代替 `uv run python`，无需重装。正式训练请新建 foundation 下的初始化和输出目录；旧的两步 smoke 权重及日志仍在原开发工作树，未复制到 foundation，也不作为正式训练起点。先固定与 Evo-1 对照的训练预算及超参数，再开展训练；评测服务指定 `--implementation evo1_groot`。本次移植没有启动正式训练或评测。
+
 ## 模型与代码
 
 | 部分 | 实现 / 复用边界 |
