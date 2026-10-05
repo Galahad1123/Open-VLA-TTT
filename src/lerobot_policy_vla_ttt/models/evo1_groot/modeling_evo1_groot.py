@@ -1,0 +1,54 @@
+"""Independent policy identity; reuse the established Evo-1 I/O and training boundary."""
+
+from lerobot.policies.pretrained import PreTrainedPolicy
+
+from ...checkpoint import checkpoint_policy_type
+from ...compatibility import ensure_supported_lerobot_version
+from ...evo1.modeling_evo1 import Evo1Policy
+from .configuration_evo1_groot import Evo1GrootConfig
+from .model import Evo1GrootModel
+
+
+class Evo1GrootPolicy(Evo1Policy):
+    config_class = Evo1GrootConfig
+    name = "evo1_groot"
+
+    def __init__(self, config, *, vlm_hub_kwargs=None, **kwargs):
+        ensure_supported_lerobot_version()
+        if not isinstance(config, Evo1GrootConfig):
+            raise TypeError("Evo1GrootPolicy requires Evo1GrootConfig")
+        PreTrainedPolicy.__init__(self, config)
+        config.validate_features()
+        if len(config.image_features) > config.max_views:
+            raise ValueError("Number of camera streams exceeds max_views")
+        self.model = Evo1GrootModel(config, vlm_hub_kwargs=vlm_hub_kwargs)
+        self.model.set_finetune_flags()
+        self._keep_frozen_embedder_eval()
+        self.init_rtc_processor()
+        self.reset()
+
+    def supports_rtc(self):
+        return False
+
+    def init_rtc_processor(self):
+        if self.config.rtc_config is not None:
+            raise ValueError("evo1_groot does not support RTC")
+        self.rtc_processor = None
+        self.model.rtc_processor = None
+
+    @classmethod
+    def from_pretrained(cls, pretrained_name_or_path, **kwargs):
+        if kwargs.get("strict", True) is not True:
+            raise ValueError("evo1_groot checkpoint loading requires strict=True")
+        kwargs["strict"] = True
+        policy_type = checkpoint_policy_type(
+            pretrained_name_or_path,
+            **{
+                key: kwargs[key]
+                for key in ("revision", "local_files_only", "cache_dir", "token")
+                if key in kwargs
+            },
+        )
+        if policy_type != cls.name:
+            raise ValueError(f"Checkpoint type {policy_type!r}; expected 'evo1_groot'")
+        return super().from_pretrained(pretrained_name_or_path, **kwargs)

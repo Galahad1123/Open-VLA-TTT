@@ -82,7 +82,9 @@ def make_server(policy, host="127.0.0.1", port=8000):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint", required=True)
-    parser.add_argument("--implementation", choices=["native", "local"], required=True)
+    parser.add_argument(
+        "--implementation", choices=["native", "local", "evo1_groot"], required=True
+    )
     parser.add_argument("--benchmark", choices=["libero", "robomme"], required=True)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)

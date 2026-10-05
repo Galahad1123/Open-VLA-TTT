@@ -13,6 +13,7 @@ from lerobot.policies.evo1.modeling_evo1 import Evo1Policy
 
 from ..cli import make_pre_post_processors
 from ..modeling_vla_ttt import VLATTTPolicy
+from ..models.evo1_groot.modeling_evo1_groot import Evo1GrootPolicy
 
 
 def checkpoint_identity(path):
@@ -83,8 +84,15 @@ class Evo1Inference:
             )
         elif implementation == "local" and config.type == "vla_ttt":
             self.policy = VLATTTPolicy.from_pretrained(path, config=config, local_files_only=True)
+        elif implementation == "evo1_groot" and config.type == "evo1_groot":
+            self.policy = Evo1GrootPolicy.from_pretrained(
+                path, config=config, local_files_only=True
+            )
         else:
-            raise ValueError("Implementation must match checkpoint type (native requires evo1)")
+            raise ValueError(
+                "Implementation must match checkpoint type: native=evo1, "
+                "local=evo1/vla_ttt, evo1_groot=evo1_groot"
+            )
         self.policy.to(device).eval()
         self.pre, self.post = make_pre_post_processors(
             self.policy.config,

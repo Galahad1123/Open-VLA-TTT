@@ -8,8 +8,12 @@ from .compatibility import (
 )
 from .configuration_vla_ttt import VLATTTConfig
 from .modeling_vla_ttt import VLATTTPolicy
+from .models.evo1_groot.configuration_evo1_groot import Evo1GrootConfig
+from .models.evo1_groot.modeling_evo1_groot import Evo1GrootPolicy
 
 __all__ = [
+    "Evo1GrootConfig",
+    "Evo1GrootPolicy",
     "SUPPORTED_LEROBOT_VERSION",
     "VLATTTConfig",
     "VLATTTPolicy",

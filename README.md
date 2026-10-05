@@ -164,3 +164,8 @@ pre, post = make_pre_post_processors(
 
 后续研究顺序：RoboTTT → Titans；RoboMME 为主评测、RMBench 为第二评测、
 LIBERO 为回归评测。参考 StarVLA 的 server-client baseline 已实现，见 [操作指南](docs/baselines.md)。
+
+## 独立 Evo-1 / GR00T-style baseline
+
+无记忆策略 `evo1_groot` 与 `evo1`、`vla_ttt` 分别注册、训练和保存。
+架构、初始化、训练与评测入口见 [evo1_groot 操作指南](docs/evo1-groot-baseline.md)。

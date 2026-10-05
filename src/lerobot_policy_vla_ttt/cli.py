@@ -11,11 +11,12 @@ from importlib import import_module
 from lerobot.policies.factory import make_pre_post_processors as upstream_processors
 
 from .configuration_vla_ttt import VLATTTConfig
+from .models.evo1_groot.configuration_evo1_groot import Evo1GrootConfig
 from .processor_vla_ttt import make_vla_ttt_pre_post_processors_from_pretrained
 
 
 def make_pre_post_processors(policy_cfg, pretrained_path=None, pretrained_revision=None, **kwargs):
-    if isinstance(policy_cfg, VLATTTConfig) and pretrained_path:
+    if isinstance(policy_cfg, (VLATTTConfig, Evo1GrootConfig)) and pretrained_path:
         return make_vla_ttt_pre_post_processors_from_pretrained(
             policy_cfg, pretrained_path, revision=pretrained_revision, **kwargs
         )
