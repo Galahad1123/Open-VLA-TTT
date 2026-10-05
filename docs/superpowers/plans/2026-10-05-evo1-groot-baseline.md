@@ -1,6 +1,6 @@
 # 独立 evo1_groot baseline 实施计划
 
-状态：实现及初次验证完成，独立审查中；用户已授权按既有布局实现。工作分支 `feat/evo1-groot-baseline`，起点 `9566a53`。原 Evo-1 工作树与快照保持独立。
+状态：实现、独立审查修复与最终验证完成。工作分支 `feat/evo1-groot-baseline`，起点 `9566a53`。原 Evo-1 工作树与快照保持独立。
 
 ## 实现约定
 
@@ -38,3 +38,6 @@
 - 完整 `pytest tests -q`：66 passed、6 skipped（未设置旧模型集成测试资产 / 新 VLM opt-in 路径）。原始测试环境 PATH、socket 与构建缓存访问问题已通过正确环境运行解决。
 - 真实 VLM GPU opt-in 测试：2/2 通过，两阶段各一次 optimizer step + 两次 32 步采样；Stage 1 / Stage 2 loss 均 1.218032（相同随机初始化与输入），梯度 tensor 数分别 120 / 732；head 参数 60,183,320。Flash Attention 2 不可用，使用 eager attention。
 - 改动文件 Ruff 检查及 `git diff --check` 通过；没有修改 `evo1/`。
+- Final: fixed 配置语义不匹配 — `test_loading_rejects_semantic_architecture_changes_but_allows_runtime_overrides` 与 `test_loading_preserves_camera_order` RED→GREEN；运行参数覆盖仍可用。
+- Final: fixed Stage 2 fp16 GradScaler / bf16 梯度冲突 — 真实 `Accelerator/update_policy` RED→GREEN；新模型用显式 dtype 对接 LeRobot 原有接口，GPU 2/2，通过真实 LIBERO Stage 1→Stage 2 各两步管线及 checkpoint 评测恢复。
+- 最终完整测试 68 passed、6 skipped；19 个新模型 CPU 测试通过；真实 VLM GPU 2/2。审查无 Critical、无延期 Minor、无未处理问题。详细证据见 [验证记录](../../experiments/2026-10-05-evo1-groot-implementation-smoke.md)。

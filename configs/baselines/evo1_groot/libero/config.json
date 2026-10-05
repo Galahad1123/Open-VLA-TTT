@@ -35,6 +35,7 @@
     },
     "device": "cuda",
     "use_amp": true,
+    "dtype": "bfloat16",
     "use_peft": false,
     "push_to_hub": false,
     "repo_id": null,

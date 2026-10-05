@@ -113,3 +113,30 @@ def test_strict_loading_rejects_other_baselines_and_missing_weights(config, tmp_
     save_file(tensors, tmp_path / "model.safetensors")
     with pytest.raises(RuntimeError):
         Evo1GrootPolicy.from_pretrained(tmp_path, local_files_only=True)
+
+
+def test_loading_rejects_semantic_architecture_changes_but_allows_runtime_overrides(
+    config, tmp_path
+):
+    import dataclasses
+
+    Evo1GrootPolicy(config).save_pretrained(tmp_path)
+    with pytest.raises(ValueError, match="num_heads"):
+        Evo1GrootPolicy.from_pretrained(
+            tmp_path, config=dataclasses.replace(config, num_heads=2), local_files_only=True
+        )
+    override = dataclasses.replace(config, n_action_steps=1, training_stage="stage2")
+    restored = Evo1GrootPolicy.from_pretrained(tmp_path, config=override, local_files_only=True)
+    assert restored.config.n_action_steps == 1
+    assert all(p.requires_grad for p in restored.model.embedder.parameters())
+
+
+def test_loading_preserves_camera_order(config, tmp_path):
+    import dataclasses
+
+    Evo1GrootPolicy(config).save_pretrained(tmp_path)
+    reordered = dataclasses.replace(
+        config, input_features=dict(reversed(config.input_features.items()))
+    )
+    with pytest.raises(ValueError, match="camera order"):
+        Evo1GrootPolicy.from_pretrained(tmp_path, config=reordered, local_files_only=True)

@@ -45,6 +45,29 @@ def test_real_vlm_training_and_sampling(stage):
     torch.nn.utils.clip_grad_norm_(policy.parameters(), 1.0)
     optimizer.step()
     optimizer.zero_grad(set_to_none=True)
+    if stage == "stage2":
+        # Characterize LeRobot 0.6.1's precision selection, then exercise its real
+        # update boundary: a fp16 GradScaler cannot unscale the VLM's bf16 grads.
+        from accelerate import Accelerator
+        from lerobot.scripts.lerobot_train import update_policy
+        from lerobot.utils.logging_utils import AverageMeter, MetricsTracker
+
+        precision = {"bfloat16": "bf16", "float32": "no"}.get(getattr(config, "dtype", None))
+        if not hasattr(config, "dtype") and config.use_amp:
+            precision = "fp16"
+        accelerator = Accelerator(mixed_precision=precision)
+        policy, optimizer = accelerator.prepare(policy, optimizer)
+        metrics = MetricsTracker(
+            1,
+            1,
+            1,
+            {
+                name: AverageMeter(name)
+                for name in ("loss", "grad_norm", "lr", "update_s", "gpu_mem_gb")
+            },
+        )
+        update_policy(metrics, policy, batch, optimizer, 1.0, accelerator)
+        assert torch.isfinite(torch.tensor(metrics.loss.avg))
     torch.manual_seed(5)
     first = policy.predict_action_chunk(batch)
     torch.manual_seed(5)

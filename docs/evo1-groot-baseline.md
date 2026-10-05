@@ -17,7 +17,9 @@
 
 `num_layers` 指 attention **子层**数，每个子层均带 FFN。`num_register_tokens=0` 是默认值；非零时只是每次调用重新展开的可学习常量，不是跨帧 memory。state/register/action 参与 self-attention；VLM context 只参与 cross-attention。整段动作使用一个 flow 时间；尚未实现跨观测序列的 Sequence Action Forcing。
 
-原 Evo-1 的 CategorySpecificMLP 用于 state/action 编解码（新参数），从预训练资产加载的只有 VLM。新 checkpoint 只支持严格恢复 `evo1_groot`，不接受 `evo1`/`vla_ttt` checkpoint，不提供隐式 head 权重迁移。恢复仍需初始化时记录的 VLM 资产路径；迁移机器时将 `config.vlm_model_name` 改为同一固定版本的本地路径。
+原 Evo-1 的 CategorySpecificMLP 用于 state/action 编解码（新参数），从预训练资产加载的只有 VLM。新 checkpoint 只支持严格恢复 `evo1_groot`，不接受 `evo1`/`vla_ttt` checkpoint，不提供隐式 head 权重迁移。加载时还校验架构与输入语义，拒绝不改变权重形状的 `num_heads` 修改或 camera 顺序变化；允许设备、训练阶段、精度、推理步数、执行前缀、优化器及加载路径等运行参数覆盖，具体白名单位于 `Evo1GrootPolicy._runtime_overrides`。恢复仍需初始化时记录的 VLM 资产路径；迁移机器时将 `config.vlm_model_name` 改为同一固定版本的本地路径。
+
+`dtype="bfloat16"` 是训练器与 policy autocast 的权威配置；`dtype="float32"` 关闭动作头 autocast，VLM 参数精度仍由 `vlm_dtype` 独立决定。继承的 `use_amp` 只作为通用工具兼容字段，不能用它选择新模型的精度。显式 dtype 让 LeRobot 0.6.1 的 Accelerator 选择 bf16，避免 fp16 GradScaler 无法处理 Stage 2 的 bf16 VLM 梯度；不支持 `dtype="float16"`。CPU policy 不启用内部 autocast。
 
 结构参考：[NVIDIA Isaac-GR00T 固定版本](https://github.com/NVIDIA/Isaac-GR00T/tree/51d4c89f72fda44cbf77285c6a8114b52676b8a1)，`gr00t/model/modules/dit.py`、`gr00t/model/gr00t_n1d7/gr00t_n1d7.py`，以及已安装的 LeRobot 0.6.1 GR00T 实现（Apache-2.0）。本动作头独立使用 PyTorch 编写；未搬入 NVIDIA 的完整模型或 diffusers DiT。它不是官方 GR00T 的权重兼容实现。
 
@@ -66,6 +68,8 @@ VLA_TTT_GROOT_VLM_PATH="$GROOT_VLM_PATH" \
   uv run pytest tests/integration/test_evo1_groot_vlm.py -q -s
 ```
 
-CPU 测试使用真实新 action head/policy/processors，只有外部 VLM 替换为小型模块。GPU 测试使用真实缓存 InternVL3、正式尺寸动作头，两阶段分别完成一次 backward/optimizer step，以及 32 步采样、padding 和固定 seed 检查。没有设置 VLM 路径时显式 skip，不自动下载。
+CPU 测试使用真实新 action head/policy/processors，只有外部 VLM 替换为小型模块。GPU 测试使用真实缓存 InternVL3、正式尺寸动作头，两阶段分别完成 backward/optimizer step，以及 32 步采样、padding 和固定 seed 检查；Stage 2 额外通过实际 `Accelerator/update_policy` 验证训练器混合精度。没有设置 VLM 路径时显式 skip，不自动下载。
 
 新模型的训练结果应另开实验记录；当前代码正确性 smoke 不能替代 LIBERO/RoboMME 闭环评测。
+
+本次验证结果、两阶段 smoke checkpoint 与已修复问题见 [实现验证记录](experiments/2026-10-05-evo1-groot-implementation-smoke.md)。
