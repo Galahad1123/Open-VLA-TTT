@@ -10,8 +10,12 @@ from .configuration_vla_ttt import VLATTTConfig
 from .modeling_vla_ttt import VLATTTPolicy
 from .models.evo1_groot.configuration_evo1_groot import Evo1GrootConfig
 from .models.evo1_groot.modeling_evo1_groot import Evo1GrootPolicy
+from .models.robottt.configuration_robottt import RoboTTTConfig
+from .models.robottt.modeling_robottt import RoboTTTPolicy
 
 __all__ = [
+    "RoboTTTConfig",
+    "RoboTTTPolicy",
     "Evo1GrootConfig",
     "Evo1GrootPolicy",
     "SUPPORTED_LEROBOT_VERSION",

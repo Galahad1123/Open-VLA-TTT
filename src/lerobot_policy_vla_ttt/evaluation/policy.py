@@ -14,6 +14,7 @@ from lerobot.policies.evo1.modeling_evo1 import Evo1Policy
 from ..cli import make_pre_post_processors
 from ..modeling_vla_ttt import VLATTTPolicy
 from ..models.evo1_groot.modeling_evo1_groot import Evo1GrootPolicy
+from ..models.robottt.modeling_robottt import RoboTTTPolicy
 
 
 def checkpoint_identity(path):
@@ -88,10 +89,12 @@ class Evo1Inference:
             self.policy = Evo1GrootPolicy.from_pretrained(
                 path, config=config, local_files_only=True
             )
+        elif implementation == "robottt" and config.type == "robottt":
+            self.policy = RoboTTTPolicy.from_pretrained(path, config=config, local_files_only=True)
         else:
             raise ValueError(
                 "Implementation must match checkpoint type: native=evo1, "
-                "local=evo1/vla_ttt, evo1_groot=evo1_groot"
+                "local=evo1/vla_ttt, evo1_groot=evo1_groot, robottt=robottt"
             )
         self.policy.to(device).eval()
         self.pre, self.post = make_pre_post_processors(
@@ -127,8 +130,9 @@ class Evo1Inference:
         self.pre.reset()
         self.post.reset()
 
-    @torch.inference_mode()
     def infer(self, observation):
-        batch = self.pre(observation_batch(observation))
-        action = self.post(self.policy.select_action(batch))
-        return action[0].detach().cpu().numpy().astype(np.float32)
+        context = torch.no_grad if isinstance(self.policy, RoboTTTPolicy) else torch.inference_mode
+        with context():
+            batch = self.pre(observation_batch(observation))
+            action = self.post(self.policy.select_action(batch))
+            return action[0].detach().cpu().numpy().astype(np.float32)
