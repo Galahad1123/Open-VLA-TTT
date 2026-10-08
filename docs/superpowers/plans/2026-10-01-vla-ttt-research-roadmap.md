@@ -2,6 +2,8 @@
 
 **记录日期：** 2026-10-01
 
+**2026-10-08 稳定基线落地：** 本地 master 纳入已验收的 Evo-1 / evo1_groot 基线与隔离评测管线。foundation 工作树的 RoboTTT/Titans 开发不随本次合并进入 master。详见[验收记录](../../experiments/2026-10-08-baseline-acceptance.md)。
+
 **目标：** 以本地 Evo-1 为研究基座，复现 RoboTTT 与 Titans 的测试时学习机制，建立可复现的记忆任务实验、消融和性能分析，支持后续论文研究。
 
 **文档层级：** 全局路线图。各阶段开始前再制定具体实现计划；本文件不预先锁定尚未验证的算法接口或实验超参数。
@@ -41,13 +43,13 @@
 | 本地 Evo-1 固定快照 | 已实现 | 提交 `6294fea`，位于 `feat/evo1-plugin-foundation` worktree |
 | 原生/本地数值等价 | 已验证 | 已缓存真实 checkpoint 上的合成 batch：动作、训练 loss、action-head 梯度、checkpoint round-trip/reset |
 | 本地 CLI 兼容入口 | 已实现 | `vla-ttt-train/eval/rollout` 复用 LeRobot runner，补充本地 processor 恢复 |
-| 三套 benchmark 的实际成功率 | 未完成 | 尚不能用数值等价测试代替任务评测 |
-| 真实数据训练 baseline | 短程闭环已验证，正式训练未完成 | RoboMME/LIBERO 各自 native/local 真实数据2步训练、保存与数值一致性；非收敛结果 |
-| RoboTTT / Titans | 未实现 | 后续阶段工作 |
+| LIBERO 实际成功率 | 两种本地基线已完成 | 各40任务×20初态；Evo-1 520/800，evo1_groot 539/800；单训练seed，非记忆能力验证 |
+| 真实数据训练 baseline | LIBERO 正式训练已完成 | 两种基线均5000+80000步；RoboMME仍只有短程验证，正式结果待补 |
+| RoboTTT / Titans | 本稳定分支不包含 | 在其他工作树开发，后续独立验收合并 |
 | server-client 评测 | 已接入并真实运行 | LIBERO同初态native/local均79步成功；RoboMME RouteStick/test0均300步超时；仅单episode smoke |
 
 历史插件计划中的“不复制 Evo-1”约束已由本路线图与固定快照决策取代。
-已完成工作予以保留，不重复搭建；分支尚未合并到主分支。
+已完成的基线工作已落到本地 master；未验收的机制开发仍保留在独立工作树。
 
 ## 四、评测环境分工
 
@@ -72,11 +74,12 @@ RMBench 接入在首个 RoboMME + RoboTTT 闭环后推进，正式机制比较�
 - [x] 建立 RoboMME 首个任务的数据、动作语义、训练和闭环评测路径（RouteStick，真实数据短程训练与test episode smoke）。
 - [x] 接入隔离环境 server-client，并验证同checkpoint的 LIBERO native/local 单episode一致性。
 - [ ] 用一致的任务配置、checkpoint、种子与评测设置比较原生和本地 baseline。
-- [ ] 建立 LIBERO 回归结果；按 benchmark 分别记录模型适配和训练过程。
+- [x] 建立本地 Evo-1 和 evo1_groot 的 LIBERO 两阶段正式训练及40任务×20初态回归结果。
+- [ ] 建立两种本地基线的 RoboMME 正式训练与评测结果，固定任务划分与训练预算。
 
 **验收：** baseline 可以从配置与固定资产复现，原生/本地差异有解释，得到真实任务结果。
 现有 LIBERO checkpoint 仅是起点，不假定其可直接解决 RoboMME/RMBench。
-当前没有全量训练与正式回归矩阵，不能把两步训练和单episode smoke视为阶段A全部完成。
+阶段A仍部分完成：LIBERO两条本地基线已验收，但同权重原生/本地完整对照与RoboMME正式结果仍待完成。暂不重复原生完整长训练，使用已有80k权重进行实现对照。
 实施与证据见 [阶段A计划](2026-10-01-stage-a-baselines.md) 和 [操作指南](../../baselines.md)。
 
 ### 阶段 B：本地 Evo-1 + RoboTTT
