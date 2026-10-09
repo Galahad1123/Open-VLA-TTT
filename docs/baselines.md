@@ -1,5 +1,9 @@
 # Evo-1 baseline：训练与隔离环境评测
 
+**2026-10-08更新：** RoboMME Evo1-GROOT正式准备及命令见
+[训练前检查报告](experiments/2026-10-08-robomme-baseline-preflight.md)。正式训练复用原视频的执行段视图，
+不要把下文早期image-backed转换或300步smoke参数当作正式配方。
+
 本轮实现的是可运行的 baseline 实验闭环。已有真实数据短程训练与真实仿真 smoke；
 **尚未完成 RoboMME 正式训练、多任务/多种子成功率实验，不能宣称阶段 A 的论文级 baseline 已完成。**
 RoboTTT / Titans 未进入本轮实现。
@@ -157,7 +161,8 @@ HF_HUB_OFFLINE=1 environments/robomme/.venv/bin/python -m vla_ttt_eval.runner \
 ```
 
 RoboMME 环境种子来自官方split/episode metadata；`--seed`控制policy随机性，不能替代官方环境seed。
-默认连续动作评测上限300步，是本项目可配置 smoke/初始实验设定，不宣称它等于所有官方leaderboard协议。
+RoboMME默认上限已改为官方MME-VLA实验的名义1300步，并跟随wrapper的reset计数偏移；
+早期300步仅为smoke配置。Challenge的1500步协议不混报。
 正式实验需固定各任务预算并与官方协议核对。不要以训练split代替test结果。
 
 JSONL首行保存运行配置、模型/processor SHA256、依赖版本、动作语义与chunk设置；随后每episode一行。

@@ -25,6 +25,7 @@ libero = ["lerobot[libero]==0.6.1"]
 
 [project.scripts]
 vla-ttt-train = "lerobot_policy_vla_ttt.cli:train"
+vla-ttt-train-robomme = "lerobot_policy_vla_ttt.baselines.robomme_data:train"
 vla-ttt-eval = "lerobot_policy_vla_ttt.cli:evaluate"
 vla-ttt-rollout = "lerobot_policy_vla_ttt.cli:rollout"
 vla-ttt-serve = "lerobot_policy_vla_ttt.evaluation.server:main"

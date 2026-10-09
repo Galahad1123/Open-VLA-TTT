@@ -15,10 +15,11 @@ def run_episode(env, client, task, episode, seed, max_steps):
         raise ValueError("max_steps must be positive")
     start = time.perf_counter()
     observation = env.reset(episode, seed)
+    step_limit = getattr(env, "rollout_step_limit", max_steps)
     client.reset(f"{task}/{episode}", seed)
     latencies = []
     success, done = False, False
-    for step in range(1, max_steps + 1):  # noqa: B007 - step is recorded after termination
+    for step in range(1, step_limit + 1):  # noqa: B007 - step is recorded after termination
         before = time.perf_counter()
         action = client.infer(observation)
         latencies.append(time.perf_counter() - before)
@@ -31,7 +32,18 @@ def run_episode(env, client, task, episode, seed, max_steps):
         "policy_seed": seed,
         "success": bool(success),
         "steps": step,
-        "termination": "success" if success else ("terminated" if done else "timeout"),
+        "termination": "success"
+        if success
+        else (
+            "timeout"
+            if getattr(env, "last_status", None) == "timeout" or not done
+            else "terminated"
+        ),
+        **(
+            {"env_seed": env.env_seed, "difficulty": env.difficulty, "step_limit": step_limit}
+            if hasattr(env, "env_seed")
+            else {}
+        ),
         "elapsed_s": time.perf_counter() - start,
         "rpc_latency_mean_s": float(np.mean(latencies)),
         "rpc_latency_p95_s": float(np.percentile(latencies, 95)),
@@ -63,8 +75,22 @@ def main():
     if args.max_steps is not None and args.max_steps <= 0:
         parser.error("--max-steps must be positive")
     from .libero import HORIZONS
+    from .robomme import MME_VLA_MAX_STEPS, TASKS
 
-    max_steps = args.max_steps or (HORIZONS[args.suite] if args.benchmark == "libero" else 300)
+    if args.benchmark == "robomme":
+        if args.tasks == ["all"]:
+            args.tasks = TASKS.copy()
+        if len(set(args.tasks)) != len(args.tasks) or any(task not in TASKS for task in args.tasks):
+            parser.error("RoboMME tasks must be unique official task names, or 'all'")
+        limit = 100 if args.split == "train" else 50
+        if args.start_episode + args.episodes > limit:
+            parser.error(f"RoboMME {args.split} episode range must be within [0, {limit})")
+    max_steps = args.max_steps or (
+        HORIZONS[args.suite] if args.benchmark == "libero" else MME_VLA_MAX_STEPS
+    )
+    args.max_steps = max_steps
+    if args.benchmark == "robomme":
+        args.robomme_protocol = "mme-vla-1300" if max_steps == MME_VLA_MAX_STEPS else "custom-smoke"
     args.output.parent.mkdir(parents=True, exist_ok=True)
     # Exclusive creation prevents accidentally overwriting prior results.
     with (
