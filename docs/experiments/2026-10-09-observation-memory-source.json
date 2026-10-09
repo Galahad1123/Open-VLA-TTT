@@ -66,6 +66,8 @@
     "tests/unit/robottt/test_head.py": "7b013fe7b745806b1247ac58da4691759759a64b0dea59c1a4610278660b020d",
     "tests/unit/robottt/test_memory.py": "dca5597138d0f3b9d7e2f729f1cc11212da3dc4fd88f4b7a11bfe48310428c9c",
     "tests/unit/robottt/test_robottt_policy.py": "e8c8e3ba06d87f65df299176f37f6cbc32b22dcf412679cf8c3e80cb8a451195",
-    "tests/unit/robottt/test_sequence.py": "209aea363d7658903936c51047d8aee1b6796004df993f76913f2ff30722745c"
-  }
+    "tests/unit/robottt/test_sequence.py": "209aea363d7658903936c51047d8aee1b6796004df993f76913f2ff30722745c",
+    "configs/baselines/evo1_groot/libero/config.json": "7d65ea3732d808a9c6d76c53c3cd53cfdeb7713d298034efa3f34ffff254bd35"
+  },
+  "snapshot_completion_note": "LIBERO preset copied to match the foundation recipe tests; no new recipe change."
 }
