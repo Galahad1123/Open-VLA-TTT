@@ -130,3 +130,43 @@ def test_tbptt_real_backward_padding_reset_and_joint_stage(setup):
     assert all(w.grad_fn is None for w in (*state[0].weights, *state[0].auxiliary))
     assert p.model.embedder.model.vision_tower.weight.grad.abs().sum() > 0
     assert any(x.grad is not None for x in p.model.action_head.parameters())
+
+
+def test_half_execution_clock_reads_before_write_and_updates_midpoint(setup):
+    from dataclasses import replace
+
+    from .conftest import batch
+
+    cfg = replace(
+        setup.config,
+        memory_update_protocol="half_execution",
+        chunk_size=6,
+        n_action_steps=4,
+        memory_update_rule="t2mem_adaptive",
+    )
+    policy = setup.policy_class(cfg).eval()
+    b = batch()
+    initial = {k: v.clone() for k, v in policy.state_dict().items()}
+    first = policy.select_action(b, env_step=0)
+    torch.testing.assert_close(first, policy.select_action(b, env_step=0))
+    policy.select_action(b, env_step=1)
+    policy.select_action(b, env_step=2)
+    assert policy.inference_state[0].update_count.tolist() == [2, 2]
+    assert policy.inference_state[0].decision_index.tolist() == [1, 1]
+    for k, v in policy.state_dict().items():
+        torch.testing.assert_close(v, initial[k])
+
+
+def test_half_execution_disabled_memory_is_valid_baseline(setup):
+    cfg = replace(
+        setup.config,
+        memory_update_protocol="half_execution",
+        memory_enabled=False,
+        memory_training="joint",
+        chunk_size=6,
+        n_action_steps=4,
+    )
+    policy = setup.policy_class(cfg).eval()
+    for step in range(5):
+        assert policy.select_action(batch(), env_step=step).shape[0] == 2
+    assert policy.inference_state is None

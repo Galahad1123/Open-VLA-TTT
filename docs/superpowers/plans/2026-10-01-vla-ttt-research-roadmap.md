@@ -4,6 +4,8 @@
 
 **进度更新：** 2026-10-08。LIBERO 两条本地基线和同权重原生/本地完整对照已验收；Titans-style VLA+TTT 代码实现与 CPU 验证已完成，正式任务验证未完成。
 
+**2026-10-09 开发分支补充：** `.worktrees/observation-memory` 中新增 AQMem 与 T²Mem-style，保持 Evo1-GR00T 主干，使用多层 VL interface 特征、先读后写和半执行周期观测更新；支持三种更新规则及 MAC/MAG/MAL 的可选同协议对照。窗口训练与 CPU 管线已实现，真实任务实验尚未开展，未合入 master。以[新设计](../specs/2026-10-09-observation-memory.md)、[使用说明](../../observation-memory.md)和[验证记录](../../experiments/2026-10-09-observation-memory-implementation.md)为准；原 RoboTTT 保留为独立对照。
+
 **目标：** 以本地 Evo-1 为研究基座，复现 RoboTTT 与 Titans 的测试时学习机制，建立可复现的记忆任务实验、消融和性能分析，支持后续论文研究。
 
 **文档层级：** 全局路线图。各阶段开始前再制定具体实现计划；本文件不预先锁定尚未验证的算法接口或实验超参数。

@@ -84,7 +84,7 @@ def main():
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument(
         "--implementation",
-        choices=["native", "local", "evo1_groot", "robottt", "mac", "mag", "mal"],
+        choices=["native", "local", "evo1_groot", "robottt", "mac", "mag", "mal", "aqmem", "t2mem"],
         required=True,
     )
     parser.add_argument("--benchmark", choices=["libero", "robomme"], required=True)

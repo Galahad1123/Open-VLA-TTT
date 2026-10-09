@@ -49,9 +49,21 @@ class TitansConfig(MemoryUpdateConfig, Evo1GrootConfig):
             raise ValueError("Invalid memory learning rate")
         if not isinstance(self.num_persistent_tokens, int) or self.num_persistent_tokens < 0:
             raise ValueError("num_persistent_tokens must be nonnegative")
-        if self.memory_training not in {"memory_only", "joint"}:
+        if self.memory_training not in {"memory_only", "policy_only", "joint"}:
             raise ValueError("memory_training must be memory_only or joint")
-        if self.memory_update_protocol != "observation" or self.rope_position_mode != "decision":
+        if (
+            self.memory_update_protocol not in {"observation", "half_execution"}
+            or self.rope_position_mode != "decision"
+        ):
             raise ValueError("VLM memory uses observation calls and decision RoPE positions")
+        if self.memory_update_protocol == "half_execution":
+            if self.n_action_steps % 2 or self.memory_granularity != "observation":
+                raise ValueError(
+                    "half_execution needs even execution length and observation granularity"
+                )
         if self.gradient_checkpointing_use_reentrant:
             raise ValueError("TTT requires non-reentrant gradient checkpointing")
+
+    @property
+    def write_stride(self):
+        return self.n_action_steps // 2

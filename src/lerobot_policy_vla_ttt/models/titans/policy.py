@@ -5,7 +5,7 @@ inherit the baseline's forward, model construction, or inference lifecycle.
 """
 
 from collections import deque
-from dataclasses import asdict
+from dataclasses import asdict, replace
 
 import torch
 from lerobot.configs.policies import PreTrainedConfig
@@ -15,6 +15,7 @@ from ...checkpoint import checkpoint_policy_type
 from ...compatibility import ensure_supported_lerobot_version
 from ...evo1.modeling_evo1 import Evo1Policy
 from ..evo1_groot.modeling_evo1_groot import Evo1GrootPolicy
+from ..observation_memory.lifecycle import HalfExecutionLifecycle
 from .configuration import TitansConfig
 from .model import TitansModel
 
@@ -56,6 +57,8 @@ class TitansPolicy(PreTrainedPolicy):
     def reset(self):
         self._action_queue = deque(maxlen=self.config.n_action_steps)
         self.inference_state = None
+        if self.config.memory_update_protocol == "half_execution":
+            HalfExecutionLifecycle._reset_observation_clock(self)
 
     def _encode(self, batch, memory, write_mask=None, reset_mask=None):
         images, image_masks = self._collect_image_batches(batch)
@@ -95,6 +98,17 @@ class TitansPolicy(PreTrainedPolicy):
         ids = self._get_embodiment_ids(batch, len(states))
         with self._maybe_autocast():
             context, mask, updated = self._encode(batch, memory, write_mask, reset_mask)
+            if self.config.memory_update_protocol == "half_execution" and updated is not None:
+                decision = (
+                    torch.ones(len(states), device=self._device, dtype=torch.long)
+                    if supervision_mask is None
+                    else supervision_mask.to(self._device, dtype=torch.long)
+                )
+                updated = tuple(
+                    replace(s, decision_index=s.decision_index + decision) for s in updated
+                )
+            if supervision_mask is not None and not supervision_mask.any():
+                return context.new_zeros(()), action_mask.sum(), updated
             pred, noise = self.model.action_head(
                 context,
                 states,
@@ -117,6 +131,8 @@ class TitansPolicy(PreTrainedPolicy):
 
     @torch.no_grad()
     def predict_action_chunk(self, batch, **kwargs):
+        if self.config.memory_update_protocol == "half_execution":
+            return HalfExecutionLifecycle.predict_action_chunk(self, batch, **kwargs)
         if any(v is not None for v in kwargs.values()):
             raise ValueError("Titans policies do not support RTC sampling arguments")
         self.eval()
@@ -140,11 +156,35 @@ class TitansPolicy(PreTrainedPolicy):
 
     @torch.no_grad()
     def select_action(self, batch, **kwargs):
+        if self.config.memory_update_protocol == "half_execution":
+            return HalfExecutionLifecycle.select_action(self, batch, **kwargs)
         self.eval()
         if not self._action_queue:
             actions = self.predict_action_chunk(batch, **kwargs)[:, : self.config.n_action_steps]
             self._action_queue.extend(actions.transpose(0, 1))
         return self._action_queue.popleft()
+
+    def observe(self, batch, *, env_step):
+        if self.config.memory_update_protocol != "half_execution":
+            raise ValueError("observe requires half_execution protocol")
+        return HalfExecutionLifecycle.observe(self, batch, env_step=env_step)
+
+    def _write_candidate(self, batch):
+        return self._encode(batch, self.inference_state)[2]
+
+    def _sample_candidate(self, batch):
+        states, _ = self._prepare_state(batch)
+        context, mask, candidate = self._encode(batch, self.inference_state)
+        actions = self.model.action_head.get_action(
+            context,
+            states,
+            action_mask=self._prepare_inference_action_mask(len(states)),
+            embodiment_id=self._get_embodiment_ids(batch, len(states)),
+            context_mask=mask,
+        )
+        return actions.view(
+            len(states), self.config.chunk_size, self.config.max_action_dim
+        ).float(), candidate
 
     def initialize_from_baseline(self, baseline):
         if baseline.config.type != "evo1_groot":

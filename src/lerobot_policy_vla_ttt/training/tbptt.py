@@ -63,7 +63,8 @@ def train_sequence(
                 reset_mask=resets[:, t],
             )
             segment_loss = numerator if segment_loss is None else segment_loss + numerator
-        (segment_loss / total_count).backward()
+        if segment_loss.requires_grad:
+            (segment_loss / total_count).backward()
         total_loss += segment_loss.detach().item()
         memory = None if memory is None else tuple(state.detach() for state in memory)
         del segment_loss, numerator, prepared

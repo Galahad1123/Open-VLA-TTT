@@ -17,6 +17,8 @@ from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from torch.utils.data import DataLoader
 
 from ..cli import make_pre_post_processors
+from ..models.aqmem.configuration_aqmem import AQMemConfig
+from ..models.aqmem.modeling_aqmem import AQMemPolicy
 from ..models.evo1_groot.modeling_evo1_groot import Evo1GrootPolicy
 from ..models.mac.configuration_mac import MACConfig
 from ..models.mac.modeling_mac import MACPolicy
@@ -26,7 +28,9 @@ from ..models.mal.configuration_mal import MALConfig
 from ..models.mal.modeling_mal import MALPolicy
 from ..models.robottt.configuration_robottt import RoboTTTConfig
 from ..models.robottt.modeling_robottt import RoboTTTPolicy
-from .sequence import TrajectoryWindows, collate_windows
+from ..models.t2mem.configuration_t2mem import T2MemConfig
+from ..models.t2mem.modeling_t2mem import T2MemPolicy
+from .sequence import HalfExecutionWindows, TrajectoryWindows, collate_windows
 from .tbptt import train_sequence
 
 
@@ -45,6 +49,7 @@ def run_training(
     seed=1000,
     warmup_steps=0,
     segment_transfer=False,
+    phase_length=0,
 ):
     if min(steps, batch_size, segment_length, save_every) < 1 or learning_rate <= 0:
         raise ValueError("Training sizes and learning rate must be positive")
@@ -62,8 +67,16 @@ def run_training(
         collate_fn=collate_windows,
         generator=torch.Generator().manual_seed(seed),
     )
+    if phase_length < 0 or (phase_length and not hasattr(policy.model, "set_phase")):
+        raise ValueError("Alternation needs phase-aware architecture and positive phase length")
+    if phase_length:
+        # Include both phases in one optimizer, retaining moments across switches.
+        policy.model.set_phase("joint")
+    parameters = policy.get_optim_params()
+    if phase_length:
+        policy.model.set_phase("memory_only")
     optimizer = torch.optim.AdamW(
-        policy.get_optim_params(),
+        parameters,
         lr=learning_rate,
         betas=policy.config.optimizer_betas,
         eps=policy.config.optimizer_eps,
@@ -73,6 +86,10 @@ def run_training(
     policy.train()
     with (output / "metrics.jsonl").open("w") as log:
         for step in range(1, steps + 1):
+            if phase_length:
+                policy.model.set_phase(
+                    "memory_only" if ((step - 1) // phase_length) % 2 == 0 else "policy_only"
+                )
             try:
                 sequence = next(iterator)
             except StopIteration:
@@ -92,11 +109,15 @@ def run_training(
                 preprocess=pre if segment_transfer else None,
                 segment_length=segment_length,
                 valid_mask=sequence["valid_mask"],
+                write_mask=sequence.get("write_mask"),
+                supervision_mask=sequence.get("supervision_mask"),
+                reset_mask=sequence.get("reset_mask"),
                 grad_clip_norm=policy.config.optimizer_grad_clip_norm,
             )
             del frames
             metrics.update(
                 step=step,
+                memory_training=policy.config.memory_training,
                 segment_transfer=segment_transfer,
                 learning_rate=optimizer.param_groups[0]["lr"],
                 memory_updates=None if memory is None else memory[0].update_count.tolist(),
@@ -119,6 +140,8 @@ def run_training(
 
 
 ARCHITECTURES = {
+    "aqmem": (AQMemConfig, AQMemPolicy),
+    "t2mem": (T2MemConfig, T2MemPolicy),
     "robottt": (RoboTTTConfig, RoboTTTPolicy),
     "mac": (MACConfig, MACPolicy),
     "mag": (MAGConfig, MAGPolicy),
@@ -137,12 +160,24 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--device", default="cuda")
     parser.add_argument(
-        "--memory-training", choices=["memory_only", "joint"], default="memory_only"
+        "--memory-training",
+        choices=["memory_only", "policy_only", "joint", "alternating"],
+        default="memory_only",
     )
+    parser.add_argument(
+        "--phase-length", type=int, default=100, help="Optimizer steps per alternating phase"
+    )
+    parser.add_argument("--memory-update-protocol", choices=["observation", "half_execution"])
+    parser.add_argument("--memory-heads", type=int)
+    parser.add_argument("--memory-head-dim", type=int)
+    parser.add_argument("--num-interface-tokens", type=int)
+    parser.add_argument("--vlm-layer-indices", type=int, nargs="+")
     parser.add_argument("--memory-dim", type=int, default=None)
     parser.add_argument("--memory-hidden-dim", type=int, default=None)
     parser.add_argument("--memory-learning-rate", type=float, default=None)
-    parser.add_argument("--memory-update-rule", choices=["gradient_descent", "momentum_decay"])
+    parser.add_argument(
+        "--memory-update-rule", choices=["gradient_descent", "momentum_decay", "t2mem_adaptive"]
+    )
     parser.add_argument("--memory-momentum", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument("--memory-forgetting", action=argparse.BooleanOptionalAction, default=None)
     parser.add_argument(
@@ -202,13 +237,19 @@ def main():
         parser.error("Checkpoint action schema does not match dataset")
     common = dict(
         device=args.device,
-        memory_training=args.memory_training,
-        training_stage="stage2" if args.memory_training == "joint" else "stage1",
+        memory_training="memory_only"
+        if args.memory_training == "alternating"
+        else args.memory_training,
+        training_stage="stage1" if args.memory_training == "memory_only" else "stage2",
         apply_training_stage_defaults=True,
         push_to_hub=False,
     )
     architecture = args.architecture or (source.type if source.type in ARCHITECTURES else "robottt")
     config_class, policy_class = ARCHITECTURES[architecture]
+    if args.phase_length < 1:
+        parser.error("phase-length must be positive")
+    if architecture == "robottt" and args.memory_training in {"policy_only", "alternating"}:
+        parser.error("Legacy RoboTTT supports memory_only and joint phases")
     if architecture == "robottt" and any(
         getattr(args, field) is not None
         for field in (
@@ -220,6 +261,11 @@ def main():
     ):
         parser.error("VLM memory options require --architecture mac, mag or mal")
     for field in (
+        "memory_update_protocol",
+        "memory_heads",
+        "memory_head_dim",
+        "num_interface_tokens",
+        "vlm_layer_indices",
         "memory_dim",
         "memory_hidden_dim",
         "memory_learning_rate",
@@ -236,7 +282,11 @@ def main():
     ):
         value = getattr(args, field)
         if value is not None:
-            common[field] = tuple(value) if field == "memory_layers" else value
+            if field not in {f.name for f in dataclasses.fields(config_class)}:
+                parser.error(f"{field} is not supported by {architecture}")
+            common[field] = (
+                tuple(value) if field in {"memory_layers", "vlm_layer_indices"} else value
+            )
     mapping = None
     if args.rope_position_mode is not None:
         common["rope_position_mode"] = args.rope_position_mode
@@ -274,24 +324,41 @@ def main():
     ranges = [
         (int(ep["dataset_from_index"]), int(ep["dataset_to_index"])) for ep in dataset.meta.episodes
     ]
-    windows = TrajectoryWindows(
-        dataset, ranges, length=args.sequence_length, stride=args.decision_stride
+    half_execution = config.memory_update_protocol == "half_execution"
+    windows = (
+        HalfExecutionWindows(
+            dataset, ranges, length=args.sequence_length, execution=config.n_action_steps
+        )
+        if half_execution
+        else TrajectoryWindows(
+            dataset, ranges, length=args.sequence_length, stride=args.decision_stride
+        )
     )
     args.output.mkdir(parents=True, exist_ok=False)
     manifest = vars(args) | {
         "initialization": mapping,
         "policy_type": config.type,
         "update_protocol": config.memory_update_protocol,
-        "rope_position_mode": config.rope_position_mode,
+        "rope_position_mode": getattr(
+            config, "rope_position_mode", "interface_slot" if architecture == "t2mem" else "none"
+        ),
+        "observation_stride": windows.stride,
         "chunk_size": config.chunk_size,
         "n_action_steps": config.n_action_steps,
         "num_inference_timesteps": config.num_inference_timesteps,
         "overlapping_label_path": architecture == "robottt"
         and args.decision_stride < config.chunk_size,
-        "overlapping_action_targets": args.decision_stride < config.chunk_size,
+        "overlapping_action_targets": (
+            config.n_action_steps if half_execution else args.decision_stride
+        )
+        < config.chunk_size,
         "memory_update_rule": config.memory_update_rule,
-        "memory_input": getattr(config, "memory_input", "action_head_tokens"),
-        "memory_granularity": getattr(config, "memory_granularity", "denoising"),
+        "memory_input": getattr(
+            config, "memory_input", "vlm_interface" if half_execution else "action_head_tokens"
+        ),
+        "memory_granularity": getattr(
+            config, "memory_granularity", "observation" if half_execution else "denoising"
+        ),
         "resolved_config": dataclasses.asdict(config),
         "resume_mode": "weights_and_processors_only",
         "dataset_info": info,
@@ -311,6 +378,7 @@ def main():
         seed=args.seed,
         warmup_steps=args.warmup_steps,
         segment_transfer=args.segment_transfer,
+        phase_length=args.phase_length if args.memory_training == "alternating" else 0,
     )
 
 

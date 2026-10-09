@@ -8,6 +8,7 @@ from .functional import mlp, temporal_rope
 from .state import FastWeightState
 from .updates.gradient_descent import GradientDescent
 from .updates.momentum_decay import MomentumDecay
+from .updates.t2mem_adaptive import T2MemAdaptive
 
 
 class AssociativeMemory(nn.Module):
@@ -33,6 +34,8 @@ class AssociativeMemory(nn.Module):
             self.update = GradientDescent(learning_rate)
         elif update_rule == "momentum_decay":
             self.update = MomentumDecay(learning_rate, input_dim, **update_kwargs)
+        elif update_rule == "t2mem_adaptive":
+            self.update = T2MemAdaptive()
         else:
             raise ValueError("Unknown memory update rule")
         # Preserve the original parameter names and forward behavior for old checkpoints.
@@ -129,9 +132,28 @@ class AssociativeMemory(nn.Module):
                 loss = (error.sum((1, 2)) / count).sum()
             gradients = torch.autograd.grad(loss, weights, create_graph=outer_grad)
             features = values.sum(1) / selected.sum(1).clamp_min(1)[:, None]
-            updated, auxiliary = self.update.step(
-                weights, gradients, active, state.auxiliary, features
-            )
+            if isinstance(self.update, T2MemAdaptive):
+                # Treat the legacy MLP as one head; preserve its masked objective.
+                scale = (x.shape[1] / selected.sum(1).clamp_min(1)).sqrt()[:, None, None]
+
+                def evaluate(parameters, keys):
+                    prediction = mlp(tuple(p[:, 0] for p in parameters), keys[:, 0])
+                    return (prediction.masked_fill(~selected[:, :, None], 0) * scale)[:, None]
+
+                updated, auxiliary = self.update.step(
+                    tuple(w[:, None] for w in weights),
+                    tuple(g[:, None] for g in gradients),
+                    active,
+                    initial=tuple(w[:, None] for w in self.fast.initial_weights(len(x))),
+                    keys=k[:, None],
+                    values=(v.masked_fill(~selected[:, :, None], 0) * scale)[:, None],
+                    forward=evaluate,
+                )
+                updated = tuple(w[:, 0] for w in updated)
+            else:
+                updated, auxiliary = self.update.step(
+                    weights, gradients, active, state.auxiliary, features
+                )
             increment = active.long()
             result = FastWeightState(
                 updated,

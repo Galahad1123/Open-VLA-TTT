@@ -1,5 +1,7 @@
 # Evo1 GR00T 与 TTT 研究设计记录
 
+> 2026-10-09 补充：新增与 `robottt/mac/mag/mal` 平级的 `models/aqmem/`、`models/t2mem/`，观测 interface 和时钟公共机制位于 `models/observation_memory/`，headed fast MLP 与三种更新规则位于 `ttt/`。具体接入、VL 层选择与半执行周期先读后写协议见[新设计](2026-10-09-observation-memory.md)。本文件旧 RoboTTT 约定仍适用于保留的原变体。
+
 **记录日期：** 2026-10-01<br>
 **架构约定更新：** 2026-10-08；记忆架构与 `evo1_groot` 并列，MAC/MAG/MAL 接入 VLM，详见末节。<br>
 **状态：** 讨论结论与参考代码核对记录；不是已完成实现，也不是冻结的实施规格。

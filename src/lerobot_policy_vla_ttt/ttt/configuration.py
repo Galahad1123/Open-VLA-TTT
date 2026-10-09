@@ -14,7 +14,7 @@ class MemoryUpdateConfig:
     memory_data_dependent: bool = True
 
     def validate_memory_update(self):
-        if self.memory_update_rule not in {"gradient_descent", "momentum_decay"}:
+        if self.memory_update_rule not in {"gradient_descent", "momentum_decay", "t2mem_adaptive"}:
             raise ValueError("Unknown memory_update_rule")
         for value in (self.memory_momentum_init, self.memory_decay_init):
             if not math.isfinite(value) or not 0 < value < 1:

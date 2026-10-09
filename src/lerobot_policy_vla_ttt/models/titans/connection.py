@@ -55,7 +55,12 @@ class MemoryConnection(nn.Module):
                 advance_position=False,
                 advance_decision=False,
             )
-            out = self.read(x, updated, selected, position)
+            out = self.read(
+                x,
+                state if self.config.memory_update_protocol == "half_execution" else updated,
+                selected,
+                position,
+            )
         else:
             updated, outputs = state, []
             for i in range(x.shape[1]):
@@ -77,7 +82,8 @@ class MemoryConnection(nn.Module):
         updated = replace(
             updated,
             position=position + active.long(),
-            decision_index=state.decision_index + active.long(),
+            decision_index=state.decision_index
+            + (active.long() if self.config.memory_update_protocol == "observation" else 0),
         )
         return out, updated
 

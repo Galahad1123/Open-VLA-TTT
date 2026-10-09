@@ -13,13 +13,22 @@ from lerobot.policies.evo1.modeling_evo1 import Evo1Policy
 
 from ..cli import make_pre_post_processors
 from ..modeling_vla_ttt import VLATTTPolicy
+from ..models.aqmem.modeling_aqmem import AQMemPolicy
 from ..models.evo1_groot.modeling_evo1_groot import Evo1GrootPolicy
 from ..models.mac.modeling_mac import MACPolicy
 from ..models.mag.modeling_mag import MAGPolicy
 from ..models.mal.modeling_mal import MALPolicy
 from ..models.robottt.modeling_robottt import RoboTTTPolicy
+from ..models.t2mem.modeling_t2mem import T2MemPolicy
 
-MEMORY_POLICIES = {"robottt": RoboTTTPolicy, "mac": MACPolicy, "mag": MAGPolicy, "mal": MALPolicy}
+MEMORY_POLICIES = {
+    "aqmem": AQMemPolicy,
+    "t2mem": T2MemPolicy,
+    "robottt": RoboTTTPolicy,
+    "mac": MACPolicy,
+    "mag": MAGPolicy,
+    "mal": MALPolicy,
+}
 
 
 def checkpoint_identity(path):

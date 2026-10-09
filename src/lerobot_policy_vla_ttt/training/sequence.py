@@ -31,10 +31,33 @@ class TrajectoryWindows(Dataset):
 
 
 def collate_windows(windows):
-    return {
+    result = {
         "frames": [
             default_collate([window["frames"][t] for window in windows])
             for t in range(len(windows[0]["frames"]))
         ],
         "valid_mask": torch.stack([window["valid"] for window in windows]),
     }
+
+    for name in ("write_mask", "supervision_mask", "reset_mask"):
+        if name in windows[0]:
+            result[name] = torch.stack([w[name] for w in windows])
+    return result
+
+
+class HalfExecutionWindows(TrajectoryWindows):
+    """Decision-aligned windows, midpoint observations, no midpoint action loss."""
+
+    def __init__(self, frames, episode_ranges, *, length, execution):
+        if execution < 2 or execution % 2:
+            raise ValueError("Execution must be positive and even")
+        ranges = list(episode_ranges)
+        super().__init__(frames, ranges, length=length, stride=execution // 2)
+        hop = max(1, length // 2) * execution
+        self.windows = [(i, end) for start, end in ranges for i in range(start, end, hop)]
+
+    def __getitem__(self, index):
+        result = super().__getitem__(index)
+        result["write_mask"] = result["valid"].clone()
+        result["supervision_mask"] = result["valid"] & (torch.arange(self.length) % 2 == 0)
+        return result
