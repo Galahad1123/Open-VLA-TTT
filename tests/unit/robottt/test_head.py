@@ -36,6 +36,55 @@ def inputs():
     return torch.randn(2, 5, 16), torch.randn(2, 4), torch.randn(2, 3, 4)
 
 
+@pytest.mark.parametrize("mode,expected", [("decision", [0, 0, 1, 1]), ("update", [0, 1, 2, 3])])
+def test_rope_clock_is_separate_from_updates(mode, expected, monkeypatch):
+    head = RoboTTTActionHead(tiny_config(rope_position_mode=mode)).eval()
+    observed = []
+    project = head.memories[0].project
+
+    def record(x, position):
+        observed.append(position[0].item())
+        return project(x, position)
+
+    monkeypatch.setattr(head.memories[0], "project", record)
+    context, state, _ = inputs()
+    head.get_action(context, state)
+    first = head.inference_state[0]
+    head.get_action(context, state)
+    last = head.inference_state[0]
+    assert observed == expected
+    assert first.decision_index.tolist() == [1, 1]
+    assert last.decision_index.tolist() == [2, 2]
+    assert last.update_count.tolist() == [4, 4]
+    assert any(not torch.equal(a, b) for a, b in zip(first.weights, last.weights, strict=True))
+    head.reset()
+    head.get_action(context, state)
+    assert head.inference_state[0].decision_index.tolist() == [1, 1]
+
+
+def test_failed_sampling_does_not_commit_clocks_or_weights(monkeypatch):
+    head = RoboTTTActionHead(tiny_config()).eval()
+    context, state, _ = inputs()
+    head.get_action(context, state)
+    previous = head.inference_state
+    velocity = head.velocity_step
+    calls = 0
+
+    def fail_on_second(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("interrupted sampling")
+        return velocity(*args, **kwargs)
+
+    monkeypatch.setattr(head, "velocity_step", fail_on_second)
+    with pytest.raises(RuntimeError, match="interrupted"):
+        head.get_action(context, state)
+    assert head.inference_state is previous
+    assert previous[0].decision_index.tolist() == [1, 1]
+    assert previous[0].update_count.tolist() == [2, 2]
+
+
 def test_backbone_import_and_exact_bypass():
     cfg = tiny_config()
     baseline = GrootActionHead(tiny_config(num_register_tokens=0)).eval()
@@ -72,7 +121,7 @@ def test_temporal_gradients_detach_and_causal_prefix():
 
 
 def test_cumulative_sampling_reset_and_state_not_checkpointed():
-    head = RoboTTTActionHead(tiny_config()).eval()
+    head = RoboTTTActionHead(tiny_config(rope_position_mode="update")).eval()
     context, state, _ = inputs()
     keys = set(head.state_dict())
     torch.manual_seed(1)

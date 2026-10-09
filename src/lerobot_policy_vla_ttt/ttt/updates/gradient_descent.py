@@ -25,3 +25,6 @@ class GradientDescent(nn.Module):
             )
             for w, g in zip(weights, gradients, strict=True)
         )
+
+    def step(self, weights, gradients, write_mask, auxiliary=None, features=None):
+        return self(weights, gradients, write_mask), None

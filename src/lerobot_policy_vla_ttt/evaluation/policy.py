@@ -14,7 +14,12 @@ from lerobot.policies.evo1.modeling_evo1 import Evo1Policy
 from ..cli import make_pre_post_processors
 from ..modeling_vla_ttt import VLATTTPolicy
 from ..models.evo1_groot.modeling_evo1_groot import Evo1GrootPolicy
+from ..models.mac.modeling_mac import MACPolicy
+from ..models.mag.modeling_mag import MAGPolicy
+from ..models.mal.modeling_mal import MALPolicy
 from ..models.robottt.modeling_robottt import RoboTTTPolicy
+
+MEMORY_POLICIES = {"robottt": RoboTTTPolicy, "mac": MACPolicy, "mag": MAGPolicy, "mal": MALPolicy}
 
 
 def checkpoint_identity(path):
@@ -89,12 +94,14 @@ class Evo1Inference:
             self.policy = Evo1GrootPolicy.from_pretrained(
                 path, config=config, local_files_only=True
             )
-        elif implementation == "robottt" and config.type == "robottt":
-            self.policy = RoboTTTPolicy.from_pretrained(path, config=config, local_files_only=True)
+        elif implementation in MEMORY_POLICIES and config.type == implementation:
+            self.policy = MEMORY_POLICIES[implementation].from_pretrained(
+                path, config=config, local_files_only=True
+            )
         else:
             raise ValueError(
                 "Implementation must match checkpoint type: native=evo1, "
-                "local=evo1/vla_ttt, evo1_groot=evo1_groot, robottt=robottt"
+                "local=evo1/vla_ttt, evo1_groot=evo1_groot, robottt/mac/mag/mal=matching type"
             )
         self.policy.to(device).eval()
         self.pre, self.post = make_pre_post_processors(
@@ -131,7 +138,11 @@ class Evo1Inference:
         self.post.reset()
 
     def infer(self, observation):
-        context = torch.no_grad if isinstance(self.policy, RoboTTTPolicy) else torch.inference_mode
+        context = (
+            torch.no_grad
+            if isinstance(self.policy, tuple(MEMORY_POLICIES.values()))
+            else torch.inference_mode
+        )
         with context():
             batch = self.pre(observation_batch(observation))
             action = self.post(self.policy.select_action(batch))

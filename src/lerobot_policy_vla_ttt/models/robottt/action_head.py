@@ -23,6 +23,7 @@ class RoboTTTActionHead(GrootActionHead):
                 config.memory_hidden_dim,
                 config.memory_learning_rate,
                 config.memory_gate_init,
+                **config.update_kwargs(),
             )
             for _ in self.blocks
         )
@@ -64,6 +65,7 @@ class RoboTTTActionHead(GrootActionHead):
         write_mask=None,
         reset_mask=None,
         memory_enabled=None,
+        decision_end=True,
     ):
         enabled = self.config.memory_enabled if memory_enabled is None else memory_enabled
         if memory is not None and len(memory) != len(self.memories):
@@ -89,7 +91,13 @@ class RoboTTTActionHead(GrootActionHead):
                     if reset_mask is not None and layer_state is not None:
                         layer_state = self.memories[i].reset_rows(layer_state, reset_mask)
                     tokens, layer_state = self.memories[i](
-                        tokens, layer_state, write_mask=write_mask
+                        tokens,
+                        layer_state,
+                        write_mask=write_mask,
+                        advance_position=(
+                            self.config.rope_position_mode == "update" or decision_end
+                        ),
+                        advance_decision=decision_end,
                     )
                     updated.append(layer_state)
                 tokens = tokens + block.dropout(block.ff(tokens))
@@ -179,6 +187,7 @@ class RoboTTTActionHead(GrootActionHead):
                 context_mask=context_mask,
                 embodiment_id=ids,
                 memory=memory,
+                decision_end=(step == steps - 1),
             )
             actions = (actions + pred.float() / steps).masked_fill(~mask, 0)
         # Commit only a complete chunk; failed sampling leaves previous state intact.

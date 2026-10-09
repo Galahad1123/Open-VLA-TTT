@@ -5,12 +5,13 @@ from dataclasses import dataclass
 
 from lerobot.configs.policies import PreTrainedConfig
 
+from ...ttt.configuration import MemoryUpdateConfig
 from ..evo1_groot.configuration_evo1_groot import Evo1GrootConfig
 
 
 @PreTrainedConfig.register_subclass("robottt")
 @dataclass
-class RoboTTTConfig(Evo1GrootConfig):
+class RoboTTTConfig(MemoryUpdateConfig, Evo1GrootConfig):
     num_register_tokens: int = 16
     memory_dim: int = 128
     memory_hidden_dim: int = 256
@@ -19,9 +20,13 @@ class RoboTTTConfig(Evo1GrootConfig):
     memory_enabled: bool = True
     memory_training: str = "memory_only"
     memory_update_protocol: str = "cumulative_denoising"
+    rope_position_mode: str = "decision"
 
     def __post_init__(self):
         super().__post_init__()
+        self.validate_memory_update()
+        if self.rope_position_mode not in {"decision", "update"}:
+            raise ValueError("rope_position_mode must be decision or update")
         if self.memory_dim <= 0 or self.memory_dim % 2 or self.memory_hidden_dim <= 0:
             raise ValueError("memory_dim must be positive and even; memory_hidden_dim positive")
         if not math.isfinite(self.memory_learning_rate) or self.memory_learning_rate <= 0:

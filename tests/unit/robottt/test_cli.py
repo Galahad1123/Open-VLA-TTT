@@ -5,6 +5,7 @@ import json
 import sys
 
 import numpy as np
+import pytest
 import torch
 from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
@@ -17,7 +18,8 @@ from lerobot_policy_vla_ttt.models.robottt.modeling_robottt import RoboTTTPolicy
 from lerobot_policy_vla_ttt.training.train_robottt import main
 
 
-def test_cli_with_real_local_dataset(config, monkeypatch, tmp_path):
+@pytest.mark.parametrize("segment_transfer", [False, True])
+def test_cli_with_real_local_dataset(config, monkeypatch, tmp_path, segment_transfer):
     import datasets
 
     monkeypatch.setattr(datasets.config, "HF_DATASETS_CACHE", tmp_path / "hf-cache")
@@ -101,9 +103,14 @@ def test_cli_with_real_local_dataset(config, monkeypatch, tmp_path):
             "6",
         ],
     )
+    if segment_transfer:
+        sys.argv.append("--segment-transfer")
     main()
     loaded = RoboTTTPolicy.from_pretrained(output / "step-00000001", local_files_only=True)
     assert loaded.config.num_register_tokens == 16
     manifest = json.loads((output / "run.json").read_text())
+    assert manifest["segment_transfer"] is segment_transfer
+    metrics = json.loads((output / "metrics.jsonl").read_text())
+    assert metrics["segment_transfer"] is segment_transfer
     assert manifest["overlapping_label_path"] is True
     assert manifest["initialization"]["copied"]

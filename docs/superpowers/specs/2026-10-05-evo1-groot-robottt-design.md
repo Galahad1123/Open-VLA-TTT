@@ -66,3 +66,74 @@
 ## 接下来
 
 按已确认的完整隐藏特征与逐去噪累计协议，固化训练/推理状态转移、配置默认值和实施计划；潜在问题保留在专项记录中持续验证。当前草案不改变正在运行的 baseline，不代表阶段 B 已完成。
+
+## 2026-10-05 审查后修订：分段搬运与独立位置时钟
+
+本节更新首版工程协议；保留完整 register/state/action 特征和逐去噪累计 fast-weight
+更新，不处理 DAgger 或重叠 chunk 的标签路径，也不修改 `evo1_groot` baseline。
+
+### TBPTT 输入按段搬运
+
+**后续用户决策：按段搬运为可选项，默认关闭。** 默认对完整窗口执行preprocessor，
+输入驻留GPU；追加 `--segment-transfer` 才启用按段搬运。该选项不是将模型参数
+或fast weights卸载到CPU，也不是关闭训练必需的CPU→GPU数据传输。
+`run.json` 和每步metrics记录 `segment_transfer`，便于复现实验。
+
+开启时，`run_training` 将 CPU frames 和
+preprocessor 交给 `train_sequence`。后者每段只预处理当前 segment，完成该段
+backward、detach 后释放处理后的输入引用，再搬运下一段。有效监督量仍在整个窗口
+上统一归一化；计数预扫描只处理动作和 mask，不搬运图像。
+
+用户反馈当前无记忆 `evo1_groot` 占用约18 GiB，先选择默认整窗口驻留；该数字
+不是RoboTTT真实长序列显存实测，扩展上下文时仍需测量峰值并酌情启用此选项。
+
+本修改约束的是设备上的输入与计算图；CPU Dataset/DataLoader 仍保留整段窗口，
+不宣称主存使用与窗口长度无关。CUDA allocator 的 reserved memory 也不一定立即下降。
+
+按两相机、256×256、RGB、float32、batch=2估算：每个位置的图像为
+`2 × 2 × 3 × 256 × 256 × 4 = 3 MiB`。窗口长度T、段长S时，旧方案
+图像驻留约 `3T MiB`，新方案约 `3 min(S,T) MiB`，差值约
+`3 max(T-S,0) MiB`。仅估算图像张量，不含模型、优化器、激活、临时resize和碎片。
+
+| 窗口T | 整段图像驻留 | 段长S=4时图像驻留 | 相对额外开销 |
+| --- | ---: | ---: | ---: |
+| 8（当前小窗口默认） | 24 MiB | 12 MiB | 12 MiB |
+| 128 | 384 MiB | 12 MiB | 372 MiB |
+| 1024 | 3 GiB | 12 MiB | 约2.99 GiB |
+| 4096 | 12 GiB | 12 MiB | 约11.99 GiB |
+| 8192 | 24 GiB | 12 MiB | 约23.99 GiB |
+
+不同batch、相机数、分辨率和实际输入dtype按比例缩放。VLM使用bf16不意味着
+预处理后的图像张量也是bf16。这是内存体积计算，不是GPU实测峰值。
+
+### RoPE位置与更新次数分离
+
+新增配置 `rope_position_mode`：新模型默认 `decision`；`update` 保留原社区式时钟
+供消融。两种模式都继续逐去噪累计更新记忆。
+
+- 状态 `decision_index`：完成一次动作决策后加1。
+- 状态 `update_count`：每次实际写入fast weights后加1。
+- 状态 `position`：下一次调用所用RoPE位置，按选定模式推进。
+- `decision`模式：一个决策的32次去噪共用一个位置，最后一次完成后推进位置；
+  `update`模式每次写入都推进位置。训练每个轨迹位置只有一次前向，两种模式相同。
+- 队列执行不增加上述计数；reset恢复初始状态和零计数；detach保留所有计数值。
+  padding/禁止写入的行不推进计数。采样失败不提交部分状态。
+- 训练CLI接受 `--rope-position-mode decision|update`；不传时新初始化采用decision，
+  从新格式robottt checkpoint加载时继承其配置。日志分别记录更新数、决策数与RoPE位置。
+- 模式保存在checkpoint配置中，严格加载不允许静默改变。早期缺失此字段的
+  robottt配置会采用新默认decision；要复现实验的旧update语义，应先在独立配置副本中
+  显式补上 `rope_position_mode="update"`，不得覆盖原始实验记录。
+
+这只修正位置尺度，不消除训练每位置1次写入、推理每决策32次写入的分布差异；
+不是已核实的官方协议，也不预先承诺提升成功率。未来分别用两种模式训练并配对评测。
+
+### 验证边界
+
+CPU回归覆盖实际Q/K投影收到的位置、两种时钟、累计权重变化、队列/reset、mask与
+detach计数，以及分段预处理后的图像引用释放和loss/梯度一致性。未抢占正在训练的
+GPU，不将CPU生命周期测试表述为真实VLM峰值显存测量。
+
+本次最终验证：关闭CUDA、离线运行完整 `pytest tests -q`，90 passed、7 skipped
+（资产opt-in集成测试未开启）；新增功能测试先复现缺失接口再通过。
+RoboTTT相关代码和测试的ruff lint/format检查、`git diff --check`通过。
+未下载资产、未启动正式训练、未修改已有checkpoint，也未提交或推送。

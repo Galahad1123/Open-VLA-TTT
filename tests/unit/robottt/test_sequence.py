@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 from lerobot_policy_vla_ttt.models.robottt.modeling_robottt import RoboTTTPolicy
@@ -30,6 +31,35 @@ def frames():
         )
         for _ in range(4)
     ]
+
+
+def test_preprocess_is_segment_bounded_and_gradients_match(config):
+    import weakref
+
+    torch.manual_seed(9)
+    a, b = RoboTTTPolicy(config), RoboTTTPolicy(config)
+    b.load_state_dict(a.state_dict())
+    data = frames()
+    live = []
+
+    def prepare(frame):
+        # Fresh tensors stand in for device copies, not a fake model or trainer.
+        assert sum(ref() is not None for ref in live) < 2
+        result = {k: v.clone() if isinstance(v, torch.Tensor) else v for k, v in frame.items()}
+        live.append(weakref.ref(result["observation.images.image"]))
+        return result
+
+    torch.manual_seed(100)
+    reference, _ = train_sequence(a, data, torch.optim.SGD(a.parameters(), lr=0), segment_length=2)
+    torch.manual_seed(100)
+    result, _ = train_sequence(
+        b, data, torch.optim.SGD(b.parameters(), lr=0), segment_length=2, preprocess=prepare
+    )
+    assert result == reference
+    assert all(ref() is None for ref in live)
+    for left, right in zip(a.parameters(), b.parameters(), strict=True):
+        if left.grad is not None:
+            torch.testing.assert_close(left.grad, right.grad)
 
 
 def test_real_segment_backward_carries_values_and_excludes_padding(config):
@@ -82,7 +112,8 @@ def test_context_only_does_not_read_labels(config):
             torch.testing.assert_close(wa, wb)
 
 
-def test_training_runner_saves_reloadable_checkpoint(config, tmp_path):
+@pytest.mark.parametrize("segment_transfer", [False, True])
+def test_training_runner_saves_reloadable_checkpoint(config, tmp_path, segment_transfer):
     from lerobot_policy_vla_ttt.cli import make_pre_post_processors
     from lerobot_policy_vla_ttt.training.train_robottt import run_training
 
@@ -92,13 +123,28 @@ def test_training_runner_saves_reloadable_checkpoint(config, tmp_path):
         for key, width in [("action", 7), ("observation.state", 8)]
     }
     pre, post = make_pre_post_processors(config, dataset_stats=stats)
+    prepared_count = 0
+    counts_at_backward = []
+
+    class CountingProcessor:
+        def __call__(self, frame):
+            nonlocal prepared_count
+            prepared_count += 1
+            return pre(frame)
+
+        def save_pretrained(self, path):
+            return pre.save_pretrained(path)
+
+    policy.model.action_head.memories[0].gate.register_hook(
+        lambda grad: counts_at_backward.append(prepared_count)
+    )
     data = frames()
     # Turn the raw B=2 frames into an indexable episode of unbatched observations.
     raw = [{k: v[0] for k, v in frame.items()} for frame in data]
     windows = TrajectoryWindows(raw, [(0, 4)], length=3, stride=1)
     run_training(
         policy,
-        pre,
+        CountingProcessor(),
         post,
         windows,
         tmp_path,
@@ -107,7 +153,9 @@ def test_training_runner_saves_reloadable_checkpoint(config, tmp_path):
         segment_length=2,
         learning_rate=1e-3,
         save_every=2,
+        segment_transfer=segment_transfer,
     )
+    assert counts_at_backward == ([2, 3, 5, 6] if segment_transfer else [3, 3, 6, 6])
     restored = RoboTTTPolicy.from_pretrained(tmp_path / "step-00000002", local_files_only=True)
     assert restored.model.action_head.inference_state is None
     assert (tmp_path / "metrics.jsonl").is_file()

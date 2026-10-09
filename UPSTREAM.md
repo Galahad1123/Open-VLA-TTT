@@ -33,3 +33,13 @@ LeRobot 0.6.1 的真实机器人部署入口为 `lerobot-rollout`；LIBERO 仿�
 ## 下载规则（模型与数据）
 
 下载任何模型、数据集或 benchmark 资产前，先向用户报告仓库或 URL、不可变 revision、缓存目标和 dry-run 预计字节数。模型和数据不进入 Git。
+
+## Titans VLM 机制参考（2026-10-08）
+
+三种连接参考 Titans NeurIPS 2025 §3 / Appendix D；更新参考 §2 的一阶
+动量与遗忘。工程核对使用 `lucidrains/titans-pytorch` 固定 commit
+`1d40c445fa1794fb28582c721786482b5b683e47` 的 `neural_memory.py`、
+`memory_models.py`、`mac_transformer.py`（MIT），没有整体移植或增加该库依赖。
+InternVL 特征注入参考已安装 Transformers 5.5.4 的 `InternVLModel.forward`；
+Qwen2 直接复用其投影权重与 RoPE/GQA 工具（Apache-2.0）。VLA 适配差异与
+验证边界见 [Titans 说明](docs/titans.md)，不宣称复现论文实验结果。

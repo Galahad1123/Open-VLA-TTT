@@ -1,7 +1,7 @@
 # Evo1 GR00T 与 TTT 研究设计记录
 
 **记录日期：** 2026-10-01<br>
-**架构约定更新：** 2026-10-05；记忆架构改为与 `evo1_groot` 并列的模型目录。<br>
+**架构约定更新：** 2026-10-08；记忆架构与 `evo1_groot` 并列，MAC/MAG/MAL 接入 VLM，详见末节。<br>
 **状态：** 讨论结论与参考代码核对记录；不是已完成实现，也不是冻结的实施规格。
 
 本文记录新增 `evo1_groot` baseline、RoboTTT 与 Titans 风格记忆的实现参考、待决策事项和代码布局，供后续设计、实施与消融对照。总体实验背景见[研究路线图](../plans/2026-10-01-vla-ttt-research-roadmap.md)。
@@ -63,7 +63,7 @@ RoboTTT、MAC、MAG、MAL 分别在 `models/robottt/`、`models/mac/`、`models/
 | fast model 与可微 KV 写入 | 社区 RoboTTT `MemoryKeyValueBind`；Titans `neural_memory.py`、`memory_models.py` | `functional_call`、`grad`、`vmap`，小型 MLP，显式参数计算 | 明确损失归约、学习率参数化、网络结构和训练梯度路径 |
 | RoboTTT 时间聚合与输出门控 | 社区 `TTTWrapper`；TTT-Video `ttt_layer.py` 与 `cogvideo/dit.py` | 沿时间更新状态、小门控接入预训练网络 | 显式插入位置、正确残差语义、因果性与 baseline 回归 |
 | 动量与遗忘更新 | Titans `neural_memory.py` | 梯度驱动的动量状态和旧权重衰减 | 与普通梯度更新共享输入约定；独立开关和退化情形验证 |
-| MAC 结构 | Titans 论文及 `mac_transformer.py` | 记忆检索、attention、写入的组织参考 | 迁移到动作 DiT，明确持久 tokens、检索位置和融合方式 |
+| MAC 结构 | Titans 论文及 `mac_transformer.py` | 记忆检索、attention、写入的组织参考 | 迁移到 VLM 语言层，明确持久 tokens、检索位置和融合方式 |
 | MAG 与 MAL 结构 | Titans 论文 | 并行门控、顺序层式组合的定义 | 本轮尚未核实到可直接对照的独立 MAG/MAL 社区模块，需继续对照论文实现 |
 | Sequence Action Forcing | 社区 `sample_action_times()`、`RoboTTT.forward()`；GR00T action head | 为每个序列位置独立采样 flow 时间 | 与新动作头噪声分布、时间条件和动作 mask 对齐 |
 | 上下文与监督分离 | 社区 `loss_mask` 路径 | 屏蔽动作监督但保留 memory 计算 | 独立的有效数据、写入、监督和 reset 标记；padding 不得污染状态 |
@@ -223,3 +223,14 @@ tests/
 机制验收需包括未来输入扰动不影响过去输出、分段/流式前向一致性、状态重置、fast weights 确实更新、部署 slow weights 不变，以及参考后端与优化后端的输出/状态/梯度对照。性能测量需注明更新频率、预测与执行 horizon、去噪步数、TBPTT 长度和精度。
 
 此记录没有宣称 RoboTTT/Titans 已实现、社区仓库完整测试已通过或新基座已有任务成绩。正式开发建议使用独立 worktree 和输出目录；共享数据资产可以复用，GPU 使用需与正在进行的 baseline 实验协调。
+
+## 2026-10-08 实施范围更新：Titans 接入 VLM
+
+用户确认 MAC/MAG/MAL 改为接入 VLM 的语言层，复用现有 evo1_groot DiT，
+不沿用上文待决策表中的动作头接入假设。默认以完整观测更新、输入全部有效
+VLM tokens；token 更新粒度和仅视觉位置输入作为消融。公共 TTT 新增可选
+Titans-style 动量/遗忘更新，RobotTTT 同样可用；其既有去噪调度保持独立。
+
+三种模型仍位于并列 `models/mac|mag|mal/`；共同 VLM 执行与 I/O 位于
+`models/titans/`，公共记忆计算继续归属 `ttt/`。具体适配和验收边界见
+[实施范围](2026-10-08-titans-vlm-design.md)及[使用说明](../../titans.md)。

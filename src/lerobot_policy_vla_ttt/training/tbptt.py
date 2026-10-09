@@ -14,6 +14,7 @@ def train_sequence(
     supervision_mask=None,
     reset_mask=None,
     grad_clip_norm=None,
+    preprocess=None,
 ):
     if not frames or segment_length < 1:
         raise ValueError("Need nonempty frames and positive segment_length")
@@ -49,10 +50,13 @@ def train_sequence(
     optimizer.zero_grad(set_to_none=True)
     memory, total_loss, segments = None, 0.0, 0
     for start in range(0, len(frames), segment_length):
+        end = min(start + segment_length, len(frames))
+        # The caller retains CPU inputs only. Device copies live for one segment.
+        prepared = [preprocess(frame) if preprocess else frame for frame in frames[start:end]]
         segment_loss = None
-        for t in range(start, min(start + segment_length, len(frames))):
+        for t in range(start, end):
             numerator, _, memory = policy.forward_step(
-                frames[t],
+                prepared[t - start],
                 memory,
                 write_mask=writes[:, t],
                 supervision_mask=supervised[:, t],
@@ -62,7 +66,7 @@ def train_sequence(
         (segment_loss / total_count).backward()
         total_loss += segment_loss.detach().item()
         memory = None if memory is None else tuple(state.detach() for state in memory)
-        del segment_loss, numerator
+        del segment_loss, numerator, prepared
         segments += 1
     if grad_clip_norm is not None:
         torch.nn.utils.clip_grad_norm_(policy.parameters(), grad_clip_norm, error_if_nonfinite=True)

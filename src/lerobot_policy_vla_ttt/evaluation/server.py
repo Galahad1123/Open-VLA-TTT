@@ -83,7 +83,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument(
-        "--implementation", choices=["native", "local", "evo1_groot", "robottt"], required=True
+        "--implementation",
+        choices=["native", "local", "evo1_groot", "robottt", "mac", "mag", "mal"],
+        required=True,
     )
     parser.add_argument("--benchmark", choices=["libero", "robomme"], required=True)
     parser.add_argument("--host", default="127.0.0.1")

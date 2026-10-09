@@ -33,6 +33,8 @@ def test_mask_batch_isolation_detach_and_reset():
     initial = memory.initial_state(2)
     _, state = memory(x, initial, write_mask=torch.tensor([True, False]))
     assert state.position.tolist() == [1, 0]
+    assert state.decision_index.tolist() == [1, 0]
+    assert state.update_count.tolist() == [1, 0]
     for old, new in zip(initial.weights, state.weights, strict=True):
         torch.testing.assert_close(old[1], new[1])
     altered = x.clone()
@@ -41,11 +43,15 @@ def test_mask_batch_isolation_detach_and_reset():
     for a, b in zip(state.weights, other.weights, strict=True):
         torch.testing.assert_close(a[0], b[0])
     detached = state.detach()
+    assert torch.equal(detached.decision_index, state.decision_index)
+    assert torch.equal(detached.update_count, state.update_count)
     assert all(w.grad_fn is None for w in detached.weights)
     reset = memory.reset_rows(detached, torch.tensor([True, False]))
     for a, b in zip(reset.weights, initial.weights, strict=True):
         torch.testing.assert_close(a[0], b[0])
     assert reset.position.tolist() == [0, 0]
+    assert reset.decision_index.tolist() == [0, 0]
+    assert reset.update_count.tolist() == [0, 0]
 
 
 def test_no_grad_updates_without_changing_parameters():

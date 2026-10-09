@@ -66,9 +66,11 @@ def test_checkpoint_and_evaluation_reset(config, tmp_path):
     first = service.infer(obs)
     assert first.shape == (7,) and np.isfinite(first).all()
     service.infer(obs)  # Queued execution does not update memory.
-    assert service.policy.model.action_head.inference_state[0].position.item() == 2
+    assert service.policy.model.action_head.inference_state[0].position.item() == 1
+    assert service.policy.model.action_head.inference_state[0].update_count.item() == 2
     service.infer(obs)
-    assert service.policy.model.action_head.inference_state[0].position.item() == 4
+    assert service.policy.model.action_head.inference_state[0].position.item() == 2
+    assert service.policy.model.action_head.inference_state[0].update_count.item() == 4
     service.reset(5)
     np.testing.assert_array_equal(first, service.infer(obs))
 

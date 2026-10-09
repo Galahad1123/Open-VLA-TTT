@@ -12,8 +12,10 @@ from lerobot_policy_vla_ttt import Evo1GrootPolicy
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("stage", ["stage1", "stage2"])
-def test_real_vlm_training_and_sampling(stage):
+@pytest.mark.parametrize(
+    "stage,vlm_dtype", [("stage1", "bfloat16"), ("stage2", "bfloat16"), ("stage2", "float32")]
+)
+def test_real_vlm_training_and_sampling(stage, vlm_dtype):
     vlm_path = os.getenv("VLA_TTT_GROOT_VLM_PATH")
     if not vlm_path:
         pytest.skip("Set VLA_TTT_GROOT_VLM_PATH to a pinned local InternVL3 snapshot")
@@ -23,7 +25,11 @@ def test_real_vlm_training_and_sampling(stage):
     root = Path(__file__).resolve().parents[2]
     config = PreTrainedConfig.from_pretrained(root / "configs/baselines/evo1_groot/libero")
     config = dataclasses.replace(
-        config, device="cuda", vlm_model_name=vlm_path, training_stage=stage
+        config,
+        device="cuda",
+        vlm_model_name=vlm_path,
+        training_stage=stage,
+        vlm_dtype=vlm_dtype,
     )
     torch.manual_seed(1000)
     policy = Evo1GrootPolicy(config, vlm_hub_kwargs={"local_files_only": True}).train()
