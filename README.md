@@ -1,8 +1,10 @@
 # VLA-TTT
 
-`lerobot-policy-vla-ttt` 是一个独立的 LeRobot out-of-tree policy plugin，用于在 Evo-1 基线上研究 VLA 的测试时训练（TTT）。目前实现了本地 Evo-1、Evo1-GR00T、RoboTTT，以及在 VLM 中接入记忆的 MAC/MAG/MAL；序列采样和 TBPTT 由共享训练入口提供。实现验证与机器人任务效果验证分开记录，TTT 变体尚未完成正式任务评测。
+`lerobot-policy-vla-ttt` 是一个独立的 LeRobot out-of-tree policy plugin，用于在 Evo-1 基线上研究 VLA 的测试时训练（TTT）。目前实现了本地 Evo-1、Evo1-GR00T、RoboTTT，AQMem、T²Mem-style，以及在 VLM 中接入记忆的 MAC/MAG/MAL；序列采样和 TBPTT 由共享训练入口提供。实现验证与机器人任务效果验证分开记录，TTT 变体尚未完成正式任务评测。
 
 RoboTTT 见 [RoboTTT 指南](docs/robottt.md)；MAC/MAG/MAL、共享动量更新和消融开关见 [Titans VLM 指南](docs/titans.md)及 [TTT 配置说明](configs/ttt/README.md)。
+
+AQMem / T²Mem 的观测时钟与读写协议见 [观测记忆指南](docs/observation-memory.md)；完整 episode、交替优化和 Accelerate 单卡/多卡入口见 [训练指南](docs/episode-parallel-training.md)。[真实 GPU 验收](docs/experiments/2026-10-12-bptt-resource-validation.md)已覆盖单卡训练与恢复，多卡 CUDA/NCCL 尚待目标服务器验证。
 
 本项目依赖 LeRobot，但不隶属于 Hugging Face、Evo-1 作者或其关联机构。仓库包含从 LeRobot 0.6.1 一次性迁入的 Evo-1 专属源码，保留原始许可证和版权头；不包含模型权重或数据集。
 
