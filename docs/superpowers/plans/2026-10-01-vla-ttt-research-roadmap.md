@@ -2,9 +2,13 @@
 
 **记录日期：** 2026-10-01
 
+**2026-10-12 合并更新：** 本次将 RoboTTT、Titans、AQMem、T²Mem 及 Accelerate episode-parallel trainer 集成到本地 master，保留已有 LIBERO / RoboMME 基线管线。T²Mem 真实 Stage1 权重的单卡交替训练、梯度累积与修复后的 checkpoint 恢复已验证；多卡 CUDA/NCCL 和正式记忆任务效果尚未验证。下文早期“未合入 master”描述保留为历史记录，以本条为当前代码集成状态。资源结果见[GPU验收](../../experiments/2026-10-12-bptt-resource-validation.md)，当前协议见[训练recipe](../../experiments/2026-10-10-libero-observation-memory-training-recipe.md)。
+
 **进度更新：** 2026-10-08。LIBERO 两条本地基线和同权重原生/本地完整对照已验收；Titans-style VLA+TTT 代码实现与 CPU 验证已完成，正式任务验证未完成。
 
 **2026-10-09 开发分支补充：** `.worktrees/observation-memory` 中新增 AQMem 与 T²Mem-style，保持 Evo1-GR00T 主干，使用多层 VL interface 特征、先读后写和半执行周期观测更新；支持三种更新规则及 MAC/MAG/MAL 的可选同协议对照。窗口训练与 CPU 管线已实现，真实任务实验尚未开展，未合入 master。以[新设计](../specs/2026-10-09-observation-memory.md)、[使用说明](../../observation-memory.md)和[验证记录](../../experiments/2026-10-09-observation-memory-implementation.md)为准；原 RoboTTT 保留为独立对照。
+
+**2026-10-08 稳定基线落地：** 本地 master 纳入已验收的 Evo-1 / evo1_groot 基线与隔离评测管线。foundation 工作树的 RoboTTT/Titans 开发不随本次合并进入 master。详见[验收记录](../../experiments/2026-10-08-baseline-acceptance.md)。
 
 **目标：** 以本地 Evo-1 为研究基座，复现 RoboTTT 与 Titans 的测试时学习机制，建立可复现的记忆任务实验、消融和性能分析，支持后续论文研究。
 
@@ -103,7 +107,7 @@ RMBench 接入在首个 RoboMME + RoboTTT 闭环后推进，正式机制比较�
 - [`evo1_groot` 训练管线对齐与离线正式命令](../../experiments/2026-10-05-evo1-groot-libero-alignment.md)。
 
 
-**2026-10-08 LIBERO 对照验收：** 相同权重、40任务×20初态，原生515/800（64.375%）、本地520/800（65.0%），差0.625个百分点；795/800成功标志一致，788/800成功标志与终止步数均一致，基础设施错误0。用户确认差异在接受范围内，原生/本地评测对照待办关闭，不再把逐episode完全一致作为此项验收前提。差异具体来源尚未定位，不宣称严格确定性等价或已证明由随机性导致。证据：[原生汇总](../../../../../outputs/eval/libero-native-stage2-080000-20ep-20261008/summary.json)、[逐episode对照](../../../../../outputs/eval/libero-native-stage2-080000-20ep-20261008/native-local-comparison.json)。
+**2026-10-08 LIBERO 对照验收：** 相同权重、40任务×20初态，原生515/800（64.375%）、本地520/800（65.0%），差0.625个百分点；795/800成功标志一致，788/800成功标志与终止步数均一致，基础设施错误0。用户确认差异在接受范围内，原生/本地评测对照待办关闭，不再把逐episode完全一致作为此项验收前提。差异具体来源尚未定位，不宣称严格确定性等价或已证明由随机性导致。证据：[原生汇总](../../../outputs/eval/libero-native-stage2-080000-20ep-20261008/summary.json)、[逐episode对照](../../../outputs/eval/libero-native-stage2-080000-20ep-20261008/native-local-comparison.json)。
 
 ### 阶段 B：本地 Evo-1 + RoboTTT
 
@@ -182,3 +186,17 @@ RoboMME原始数据已位于 `/home/hello/lizk/datasets/robomme`，元数据及�
 RoboTTT与Titans-style代码已在foundation实现，后续重点是真实模型、长程训练与任务能力验证；独立验收后再合并到master，不影响稳定基线实验。RMBench仍按阶段C推进。
 
 各子阶段沿用Native方式逐项实施、测试和审查；研究范围或目标变化先更新路线图，一般实现细节由子计划记录。
+
+### 2026-10-08 RoboMME Evo1-GROOT正式准备
+
+- [x] master独立RoboMME环境离线建立；16任务各test0真实reset/render/step通过。
+- [x] 核验48组task/split元数据及官方seed；固定MME-VLA名义1300步协议及wrapper计数偏移。
+- [x] 全量1600episode/768897帧数值和边界检查；476857执行帧作为动作监督，demo原文件保留。
+- [x] 复用原LeRobot视频，执行段索引视图、20步action查询和padding mask、执行段统计量接线完成。
+- [x] 本地InternVL3+随机GROOT头；Stage1 batch32、Stage2 batch16各3步通过，显存18.46/26.47 GiB。
+- [x] 独立server-client四套件代表任务smoke通过，无基础设施错误。
+- [ ] 运行已同意的正式5000+80000步训练，再进行val选模和16×50 test评测；本轮没有启动。
+
+可执行脚本`bash scripts/train_robomme_evo1_groot.sh --train`；默认不传参数只跑smoke。
+细节与证据见[训练前检查报告](../../experiments/2026-10-08-robomme-baseline-preflight.md)。
+本地Evo-1的RoboMME正式结果仍未完成；不将本次Evo1-GROOT准备标作整个阶段A完成。

@@ -85,3 +85,60 @@ def test_episode_rollout_stops_on_success_and_reports_timeout():
     assert result["termination"] == "timeout"
     with pytest.raises(ValueError):
         runner.run_episode(Environment(False), Remote(), "task", 0, 5, 0)
+
+
+def test_robomme_protocol_is_distinct_from_smoke_and_challenge():
+    from vla_ttt_eval.robomme import MME_VLA_MAX_STEPS, TASK_SUITES, TASKS
+
+    assert MME_VLA_MAX_STEPS == 1300
+    assert len(TASKS) == len(set(TASKS)) == 16
+    assert all(len(tasks) == 4 for tasks in TASK_SUITES.values())
+
+
+def test_env_timeout_is_not_misreported_as_termination():
+    from vla_ttt_eval.runner import run_episode
+
+    class Env:
+        last_status = "timeout"
+        env_seed, difficulty = 660000, "easy"
+
+        def reset(self, episode, seed):
+            return {}
+
+        def step(self, action):
+            return {}, False, True
+
+    class Client:
+        def reset(self, *args):
+            pass
+
+        def infer(self, obs):
+            return np.zeros(8)
+
+    result = run_episode(Env(), Client(), "RouteStick", 0, 1000, 1300)
+    assert result["termination"] == "timeout"
+    assert result["env_seed"] == 660000
+
+
+def test_official_wrapper_remaining_budget_is_respected():
+    from vla_ttt_eval.runner import run_episode
+
+    class Env:
+        def reset(self, episode, seed):
+            self.rollout_step_limit = 4  # Nominal max_steps=3 plus official reset offset.
+            self.n = 0
+            return {}
+
+        def step(self, action):
+            self.n += 1
+            return {}, self.n == 4, self.n == 4
+
+    class Client:
+        def reset(self, *args):
+            pass
+
+        def infer(self, obs):
+            return np.zeros(8)
+
+    result = run_episode(Env(), Client(), "RouteStick", 0, 1000, 3)
+    assert result["success"] and result["steps"] == 4
