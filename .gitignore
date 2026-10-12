@@ -12,6 +12,7 @@ outputs/
 artifacts/
 .env
 .env.*
+configs/machine.local.toml
 *.safetensors
 *.ckpt
 *.pt

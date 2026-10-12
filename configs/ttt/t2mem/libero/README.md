@@ -1,5 +1,9 @@
 # LIBERO T²Mem episode recipe
 
+`recipe.json` records the agreed TBPTT=8 defaults explicitly for portable launches.
+Machine paths belong in [machine.local.toml](../../../machine.example.toml), not in
+the recipe. Follow the [portable training guide](../../../../docs/portable-training.md).
+
 `recipe-72gb.json` is an explicit outer-loop recipe for
 `python -m lerobot_policy_vla_ttt.training.train_episode_parallel --recipe ...`.
 It is not a standalone model config. Model dimensions, processors and action

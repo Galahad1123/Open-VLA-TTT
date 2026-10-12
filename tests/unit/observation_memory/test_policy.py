@@ -170,7 +170,12 @@ def test_actual_service_uses_midpoint_and_preserves_all_parameters(
     pre, post = make_pre_post_processors(cfg, dataset_stats=stats)
     pre.save_pretrained(tmp_path)
     post.save_pretrained(tmp_path)
-    service = Evo1Inference(tmp_path, cfg.type, "libero", device="cpu", n_action_steps=4)
+    vlm = tmp_path / "relocated-vlm"
+    vlm.mkdir()
+    service = Evo1Inference(
+        tmp_path, cfg.type, "libero", device="cpu", n_action_steps=4, vlm_path=vlm
+    )
+    assert service.policy.config.vlm_model_name == str(vlm)
     before = {k: v.clone() for k, v in service.policy.state_dict().items()}
     obs = {
         "state": np.zeros(8, np.float32),

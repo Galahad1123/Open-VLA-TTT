@@ -1,8 +1,8 @@
 # Episode 并行训练
 
-独立入口 `python -m lerobot_policy_vla_ttt.training.train_episode_parallel` 支持 MAC、MAG、MAL、AQMem、T²Mem。开发位于 `.worktrees/observation-memory`；原 `train_robottt`、`train_titans`、`tbptt.py` 与根目录代码不变。
+独立入口 `python -m lerobot_policy_vla_ttt.training.train_episode_parallel` 支持 MAC、MAG、MAL、AQMem、T²Mem，已合入 master。原 `train_robottt`、`train_titans`、`tbptt.py` 保持独立。
 
-本入口落实 [LIBERO recipe](experiments/2026-10-10-libero-observation-memory-training-recipe.md) 的完整 episode 训练，既可单进程运行，也可用 Accelerate 启动多 GPU 进程。当前验证为 tiny 真实模型的 CPU/Gloo 测试；真实权重 GPU 显存、CUDA/NCCL、BF16 一致性及加速比仍需后续验收。本次未启动正式训练。
+本入口落实 [LIBERO recipe](experiments/2026-10-10-libero-observation-memory-training-recipe.md) 的完整 episode 训练，既可单进程运行，也可用 Accelerate 启动多 GPU 进程。已记录 tiny 真实模型的 CPU/Gloo 和真实权重单 GPU 验收，见文末；多卡 CUDA/NCCL、BF16 一致性及加速比仍需目标机器验收。首次部署请看 [跨机器训练快速开始](portable-training.md)。
 
 ## 并行和损失语义
 
@@ -27,6 +27,7 @@ Accelerate 负责启动、进程信息、设备和 backward。本入口**没有�
 ```text
 run.json
 metrics.jsonl
+logs/rank-0.log
 step-00000250/
   COMPLETE
   training.pt
@@ -40,34 +41,34 @@ step-00000250/
 
 `--resume` 要求相同 world size、recipe、模型配置和数据身份；输出必须指定新的目录，避免覆盖旧日志。更改 world size 时用 `--checkpoint .../pretrained_model` 开始新的训练阶段，明确属于 warm start。`training.pt` 包含 Python RNG 对象，只加载自己信任的本地 checkpoint。
 
+新运行使用内容身份，增加数据集和 VLM 完整 SHA256，允许相同资源换目录。
+旧 checkpoint 保留原有路径限制。`--machine` 管理路径，`--vlm-path` 可覆盖 VLM 位置；
+二者均不修改源 checkpoint。完整配置与目录约定见快速开始文档。
+
 ## 命令
 
-从开发 worktree 运行，并显式使用 `PYTHONPATH=src`，不要重新安装或修改共享环境。
+从已安装的仓库根目录运行，先按快速开始文档填写 `configs/machine.local.toml`。
 
 仅解析配置，不加载权重、不初始化 Accelerator 或 CUDA：
 
 ```bash
-cd /home/hello/lizk/vlas/vla-ttt/.worktrees/observation-memory
-CUDA_VISIBLE_DEVICES='' PYTHONPATH=src HF_HUB_OFFLINE=1 \
-  /home/hello/lizk/vlas/vla-ttt/.venv/bin/python \
+CUDA_VISIBLE_DEVICES='' HF_HUB_OFFLINE=1 uv run --frozen python \
   -m lerobot_policy_vla_ttt.training.train_episode_parallel \
   --architecture t2mem \
-  --checkpoint ../evo1-plugin-foundation/outputs/libero-evo1-groot-scratch-seed1000-stage1/checkpoints/005000/pretrained_model \
-  --dataset-root /home/hello/lizk/datasets/libero \
-  --output outputs/libero-t2mem-episode-parallel --dry-run
+  --machine configs/machine.local.toml \
+  --run-name libero-t2mem-episode-parallel --dry-run
 ```
 
-之后在独占的两张 GPU 上运行（本地现有 RoboMME 训练结束前不执行）：
+之后在分配的两张 GPU 上进行短程检查：
 
 ```bash
-CUDA_VISIBLE_DEVICES=0,1 PYTHONPATH=src HF_HUB_OFFLINE=1 \
-  /home/hello/lizk/vlas/vla-ttt/.venv/bin/python -m accelerate.commands.launch \
+CUDA_VISIBLE_DEVICES=0,1 HF_HUB_OFFLINE=1 \
+  uv run --frozen python -m accelerate.commands.launch \
   --multi_gpu --num_processes=2 --mixed_precision=no \
   -m lerobot_policy_vla_ttt.training.train_episode_parallel \
   --architecture t2mem \
-  --checkpoint ../evo1-plugin-foundation/outputs/libero-evo1-groot-scratch-seed1000-stage1/checkpoints/005000/pretrained_model \
-  --dataset-root /home/hello/lizk/datasets/libero \
-  --output outputs/libero-t2mem-episode-parallel --stop-after 2
+  --machine configs/machine.local.toml \
+  --run-name libero-t2mem-episode-parallel --stop-after 2
 ```
 
 `--mixed_precision=no` 只关闭 Accelerate 的全局精度包装，policy 自身仍在 CUDA 使用 BF16 autocast，内层记忆计算显式 FP32。`--stop-after 2` 用于短程冒烟，保留完整 2000 步 scheduler，而非缩短训练预算。完整阶段切换资源验收应另外配置较短 phase 或跑到切换边界，检查两组 AdamW 状态同时常驻后的峰值。
@@ -75,9 +76,9 @@ CUDA_VISIBLE_DEVICES=0,1 PYTHONPATH=src HF_HUB_OFFLINE=1 \
 同样的启动方式恢复，替换来源参数和输出目录：
 
 ```text
---resume outputs/libero-t2mem-episode-parallel/step-00000002
---dataset-root /home/hello/lizk/datasets/libero
---output outputs/libero-t2mem-episode-parallel-resumed
+--resume /srv/experiments/vla-ttt/libero-t2mem-episode-parallel/step-00000002
+--machine configs/machine.local.toml
+--run-name libero-t2mem-episode-parallel-resumed
 ```
 
 通过 `--recipe recipe.json` 覆盖 Recipe 字段，例如受控测试用：
@@ -95,7 +96,7 @@ CPU 单进程与双进程测试，包括五种实际 tiny InternVL/Qwen2+memory 
 ```bash
 CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
   HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONPATH=src \
-  nice -n 10 /home/hello/lizk/vlas/vla-ttt/.venv/bin/python \
+  uv run --frozen python \
   -m pytest tests/unit/episode_parallel -q
 ```
 
@@ -105,7 +106,7 @@ Gloo 需要本机 socket 权限。受限沙箱如果禁止 socket，应在允许
 
 ```bash
 CUDA_VISIBLE_DEVICES=0,1 OMP_NUM_THREADS=1 PYTHONPATH=src:tests/unit \
-  /home/hello/lizk/vlas/vla-ttt/.venv/bin/python -m torch.distributed.run \
+  uv run --frozen python -m torch.distributed.run \
   --standalone --nproc-per-node=2 -m episode_parallel.distributed_probe \
   --device cuda --output /tmp/episode-cuda-two
 ```

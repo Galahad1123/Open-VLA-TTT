@@ -1,0 +1,11 @@
+# Copy to configs/machine.local.toml and replace these ABSOLUTE example paths.
+# This file only describes the machine; training hyperparameters stay in recipe JSON.
+[assets]
+initial_checkpoint = "/srv/models/libero-stage1-5k/pretrained_model"
+vlm = "/srv/models/InternVL3-1B-hf"
+libero_dataset = "/srv/datasets/libero"
+
+[storage]
+# Each --run-name gets run.json, metrics.jsonl, logs/rank-N.log and step-N/ here.
+runs_root = "/srv/experiments/vla-ttt"
+hf_home = "/srv/cache/huggingface"
