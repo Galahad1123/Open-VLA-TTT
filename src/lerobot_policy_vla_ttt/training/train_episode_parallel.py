@@ -1,0 +1,303 @@
+"""Independent Accelerate episode-parallel trainer for the LIBERO memory recipe.
+
+Only outer slow gradients are reduced. --dry-run reads configs, never weights.
+Use --cpu for CPU smoke tests; GPU execution must be explicitly scheduled by the user.
+"""
+
+import argparse
+import dataclasses
+import hashlib
+import json
+import os
+from pathlib import Path
+
+from lerobot.configs.policies import PreTrainedConfig
+
+from ..models.evo1_groot.configuration_evo1_groot import Evo1GrootConfig
+from .episode_parallel.checkpoint import canonical
+from .episode_parallel.config import Recipe
+from .train_robottt import ARCHITECTURES
+
+KINDS = ("mac", "mag", "mal", "aqmem", "t2mem")
+LIBERO_REVISION = "86958911c0f959db2bbbdb107eb3e17c5f9c798e"
+
+
+def resolve_config(source, architecture, recipe, *, device, overrides=None):
+    if architecture not in KINDS or source.type not in (architecture, "evo1_groot"):
+        raise ValueError("Expected evo1_groot or a checkpoint of the selected architecture")
+    cls, _ = ARCHITECTURES[architecture]
+    values = {f.name: getattr(source, f.name) for f in dataclasses.fields(source)}
+    changes = dict(overrides or {})
+    # Overrides describe new memory structure only, never silently alter a backbone.
+    allowed = {f.name for f in dataclasses.fields(cls)} - {
+        f.name for f in dataclasses.fields(Evo1GrootConfig)
+    }
+    allowed |= {"vlm_layer_indices"}
+    if set(changes) - allowed:
+        raise ValueError(f"Unsupported memory overrides: {sorted(set(changes) - allowed)}")
+    if source.type != "evo1_groot" and changes:
+        raise ValueError("Memory overrides apply only when initializing from baseline")
+    values.update(changes)
+    values.update(
+        # LeRobot capability checks take a device type, not an indexed device.
+        # CUDA's current device is set from Accelerate before model creation.
+        device=str(device).split(":")[0],
+        dtype="bfloat16",
+        vlm_dtype="float32",
+        use_amp=True,
+        use_flash_attn=False,
+        training_stage="stage2",
+        apply_training_stage_defaults=True,
+        finetune_vlm=True,
+        finetune_language_model=True,
+        finetune_vision_model=True,
+        finetune_action_head=True,
+        memory_training="memory_only",
+        memory_update_protocol="half_execution",
+        n_action_steps=recipe.execution,
+        enable_gradient_checkpointing=True,
+        gradient_checkpointing_use_reentrant=False,
+        push_to_hub=False,
+    )
+    if source.type == "evo1_groot":
+        values.setdefault("memory_update_rule", "t2mem_adaptive")
+    if values["chunk_size"] != recipe.horizon:
+        raise ValueError("Recipe horizon must match checkpoint chunk_size")
+    return cls(**values)
+
+
+def augmentation_config(values):
+    from lerobot.transforms import ImageTransformsConfig
+    from lerobot.transforms.transforms import ImageTransformConfig
+
+    values = dict(values)
+    if "tfs" in values:
+        values["tfs"] = {k: ImageTransformConfig(**v) for k, v in values["tfs"].items()}
+    return ImageTransformsConfig(**values)
+
+
+def metadata_digest(root):
+    """Hash small metadata files, never scan videos or frame parquet payloads."""
+    digest = hashlib.sha256()
+    for path in sorted((root / "meta").rglob("*")):
+        if path.is_file() and path.suffix in (".json", ".jsonl", ".parquet"):
+            digest.update(str(path.relative_to(root)).encode())
+            with path.open("rb") as stream:
+                while chunk := stream.read(1024 * 1024):
+                    digest.update(chunk)
+    return digest.hexdigest()
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    sources = parser.add_mutually_exclusive_group(required=True)
+    sources.add_argument("--checkpoint", type=Path, help="Weight initialization, not exact resume")
+    sources.add_argument("--resume", type=Path, help="Trusted complete trainer checkpoint")
+    parser.add_argument("--architecture", choices=KINDS)
+    parser.add_argument("--dataset-root", type=Path, required=True)
+    parser.add_argument("--dataset-repo", default="HuggingFaceVLA/libero")
+    parser.add_argument("--revision", default=LIBERO_REVISION)
+    parser.add_argument(
+        "--output", type=Path, required=True, help="New directory, including on resume"
+    )
+    parser.add_argument(
+        "--recipe", type=Path, help="JSON Recipe overrides; defaults follow LIBERO recipe"
+    )
+    parser.add_argument(
+        "--memory-config", type=Path, help="JSON memory structure overrides for baseline init"
+    )
+    parser.add_argument(
+        "--augmentation-config", type=Path, help="JSON LeRobot image transform config"
+    )
+    parser.add_argument(
+        "--stop-after", type=int, help="Stop after this many updates, retaining full schedule"
+    )
+    parser.add_argument("--cpu", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args(argv)
+    try:
+        if args.output.exists():
+            raise ValueError("Use a new output directory")
+        if args.stop_after is not None and args.stop_after < 1:
+            raise ValueError("stop-after must be positive")
+        resume_state = None
+        if args.resume:
+            import torch
+
+            if not (args.resume / "COMPLETE").is_file():
+                raise ValueError("Incomplete resume checkpoint")
+            resume_state = torch.load(
+                args.resume / "training.pt", map_location="cpu", weights_only=False
+            )
+        checkpoint = args.checkpoint or (args.resume / "pretrained_model")
+        source = PreTrainedConfig.from_pretrained(checkpoint, local_files_only=True)
+        architecture = args.architecture or (source.type if source.type in KINDS else "t2mem")
+        recipe_values = resume_state["recipe"] if resume_state else {}
+        if args.recipe:
+            recipe_values = recipe_values | json.loads(args.recipe.read_text())
+        recipe = Recipe(**recipe_values)
+        world = int(os.environ.get("WORLD_SIZE", "1"))
+        if recipe.global_batch_size % world:
+            raise ValueError("global_batch_size must be divisible by WORLD_SIZE")
+        overrides = json.loads(args.memory_config.read_text()) if args.memory_config else {}
+        # CPU here avoids GPU discovery during --dry-run.
+        resolved = resolve_config(source, architecture, recipe, device="cpu", overrides=overrides)
+        info = json.loads((args.dataset_root / "meta/info.json").read_text())
+        if info["features"]["action"]["shape"] != [7]:
+            raise ValueError("This recipe entry point requires canonical LIBERO action dimension 7")
+        if source.output_features and source.output_features["action"].shape != (7,):
+            raise ValueError("Checkpoint action dimension must match LIBERO")
+        if args.augmentation_config:
+            transforms = json.loads(args.augmentation_config.read_text())
+        elif resume_state:
+            transforms = resume_state["identity"]["augmentation"]
+        elif (checkpoint / "train_config.json").is_file():
+            transforms = json.loads((checkpoint / "train_config.json").read_text())["dataset"][
+                "image_transforms"
+            ]
+        else:
+            raise ValueError(
+                "No saved augmentation config; provide --augmentation-config explicitly"
+            )
+        transform_config = augmentation_config(transforms)
+        identity = {
+            "dataset": {
+                "root": str(args.dataset_root.resolve()),
+                "repo": args.dataset_repo,
+                "revision": args.revision,
+                "metadata_sha256": metadata_digest(args.dataset_root),
+            },
+            "augmentation": canonical(dataclasses.asdict(transform_config)),
+            # Dict equality ignores order, but seeded transform selection does not.
+            "augmentation_order": list(transform_config.tfs),
+            "initialization": (
+                resume_state["identity"]["initialization"]
+                if resume_state
+                else str(checkpoint.resolve())
+            ),
+        }
+        if resume_state and (
+            resume_state["recipe"] != dataclasses.asdict(recipe)
+            or resume_state["identity"] != identity
+            or resume_state["world_size"] != world
+        ):
+            raise ValueError("Resume recipe, identity or world_size mismatch")
+        if args.dry_run:
+            print(
+                json.dumps(
+                    canonical(
+                        {
+                            "recipe": dataclasses.asdict(recipe),
+                            "policy": dataclasses.asdict(resolved),
+                            "augmentation": dataclasses.asdict(transform_config),
+                            "identity": identity,
+                            "world_size": world,
+                            "gradient_reduction": "explicit_sum",
+                        }
+                    ),
+                    indent=2,
+                )
+            )
+            return
+    except (ValueError, KeyError, OSError, TypeError) as exc:
+        parser.error(str(exc))
+
+    from datetime import timedelta
+
+    import torch
+    from accelerate import Accelerator
+    from accelerate.utils import InitProcessGroupKwargs
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+    from lerobot.transforms import ImageTransforms
+
+    from ..cli import make_pre_post_processors
+    from ..models.evo1_groot.modeling_evo1_groot import Evo1GrootPolicy
+    from .episode_parallel.data import Episode, EpisodeSource
+    from .episode_parallel.runner import run
+    from .episode_parallel.runtime import collective_error
+
+    accelerator = Accelerator(
+        cpu=args.cpu,
+        mixed_precision="no",
+        gradient_accumulation_steps=1,
+        kwargs_handlers=[InitProcessGroupKwargs(timeout=timedelta(minutes=30))],
+    )
+    if accelerator.device.type != "cuda" and not args.cpu:
+        raise RuntimeError("CUDA unavailable; use --cpu explicitly for CPU smoke tests")
+    # Single-process Accelerate may return bare `cuda`; set_device and the
+    # episode RNG context require a concrete index. Preserve assigned DDP ranks.
+    if accelerator.device.type == "cuda" and accelerator.device.index is None:
+        accelerator.state.device = torch.device("cuda", torch.cuda.current_device())
+    error = None
+    try:
+        # Set only this process's random streams and current CUDA device.
+        torch.random.default_generator.manual_seed(recipe.seed)
+        if accelerator.device.type == "cuda":
+            torch.cuda.set_device(accelerator.device)
+            torch.cuda.manual_seed(recipe.seed)
+        resolved = resolve_config(
+            source, architecture, recipe, device=accelerator.device, overrides=overrides
+        )
+        _, policy_cls = ARCHITECTURES[architecture]
+        if source.type == "evo1_groot":
+            baseline_config = dataclasses.replace(source, device="cpu", vlm_dtype="float32")
+            baseline = Evo1GrootPolicy.from_pretrained(
+                checkpoint, config=baseline_config, local_files_only=True
+            )
+            policy = policy_cls(resolved, vlm_hub_kwargs={"local_files_only": True})
+            policy.initialize_from_baseline(baseline)
+            del baseline
+        else:
+            policy = policy_cls.from_pretrained(checkpoint, config=resolved, local_files_only=True)
+        policy.float()
+        pre, post = make_pre_post_processors(
+            resolved,
+            pretrained_path=checkpoint,
+            preprocessor_overrides={"device_processor": {"device": str(accelerator.device)}},
+        )
+        dataset = LeRobotDataset(
+            args.dataset_repo,
+            root=args.dataset_root,
+            revision=args.revision,
+            delta_timestamps={"action": [i / info["fps"] for i in range(recipe.horizon)]},
+            video_backend="pyav",
+        )
+        episodes = []
+        for row in dataset.meta.episodes:
+            if len(row["tasks"]) != 1:
+                raise ValueError("Recipe requires one task per episode")
+            episodes.append(
+                Episode(
+                    int(row["episode_index"]),
+                    str(row["tasks"][0]),
+                    int(row["dataset_from_index"]),
+                    int(row["dataset_to_index"]),
+                )
+            )
+        source_data = EpisodeSource(
+            dataset,
+            episodes,
+            execution=recipe.execution,
+            horizon=recipe.horizon,
+            transform=ImageTransforms(transform_config),
+        )
+    except Exception as exc:
+        error = f"Initialization failed: {type(exc).__name__}: {exc}"
+    collective_error(error, accelerator.device)
+    run(
+        policy,
+        source_data,
+        pre,
+        post,
+        recipe=recipe,
+        accelerator=accelerator,
+        output=args.output,
+        identity=identity,
+        resume=args.resume,
+        stop_after=args.stop_after,
+    )
+    accelerator.end_training()
+
+
+if __name__ == "__main__":
+    main()

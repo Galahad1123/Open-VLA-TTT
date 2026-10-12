@@ -73,6 +73,12 @@ legacy `observation` protocol and original RoboTTT behavior are preserved.
 
 ## Training
 
+The current LIBERO training decisions and real-checkpoint GPU preflight results
+are recorded in the [2026-10-10 training recipe](experiments/2026-10-10-libero-observation-memory-training-recipe.md).
+That recipe distinguishes agreed protocol, provisional hyperparameters and pending
+trainer work. The command below demonstrates the existing windowed trainer; it
+does not yet implement the complete full-episode recipe.
+
 From this worktree, use the existing foundation environment with `PYTHONPATH=src`
 to avoid its editable installation importing the other worktree:
 

@@ -1,0 +1,57 @@
+"""Auditable outer-loop settings for the LIBERO observation-memory recipe."""
+
+import math
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class Recipe:
+    steps: int = 2000
+    phase_length: int = 500
+    global_batch_size: int = 4
+    tbptt_events: int = 8
+    execution: int = 10
+    horizon: int = 50
+    warmup_steps: int = 50
+    seed: int = 1000
+    save_every: int = 250
+    grad_clip: float = 1.0
+    policy_lr: float = 1e-5
+    memory_lr: float = 7.5e-5
+    gate_lr: float = 5e-4
+    policy_decay: float = 1e-3
+    memory_decay: float = 1e-5
+    minimum_lr_ratio: float = 0.1
+
+    def __post_init__(self):
+        for name in (
+            "steps",
+            "phase_length",
+            "global_batch_size",
+            "tbptt_events",
+            "execution",
+            "horizon",
+            "save_every",
+        ):
+            value = getattr(self, name)
+            if type(value) is not int or value < 1:
+                raise ValueError(f"{name} must be a positive integer")
+        if self.execution < 2 or self.execution % 2:
+            raise ValueError("execution must be even and >= 2")
+        if type(self.warmup_steps) is not int or self.warmup_steps < 0:
+            raise ValueError("warmup_steps must be nonnegative")
+        for name in ("grad_clip", "policy_lr", "memory_lr", "gate_lr"):
+            if not math.isfinite(getattr(self, name)) or getattr(self, name) <= 0:
+                raise ValueError(f"{name} must be finite and positive")
+        for name in ("policy_decay", "memory_decay"):
+            if not math.isfinite(getattr(self, name)) or getattr(self, name) < 0:
+                raise ValueError(f"{name} must be finite and nonnegative")
+        if not 0 <= self.minimum_lr_ratio <= 1:
+            raise ValueError("minimum_lr_ratio must be in [0, 1]")
+
+    def phase(self, step):
+        """Phase for the zero-based next outer update."""
+        return "memory" if (step // self.phase_length) % 2 == 0 else "policy"
+
+    def phase_budget(self, phase):
+        return sum(self.phase(step) == phase for step in range(self.steps))
