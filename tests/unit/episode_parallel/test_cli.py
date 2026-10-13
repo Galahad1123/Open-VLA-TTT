@@ -5,6 +5,7 @@ import sys
 from dataclasses import fields
 from pathlib import Path
 
+import pytest
 from observation_memory.test_policy import policy_config
 
 from lerobot_policy_vla_ttt.models.evo1_groot.configuration_evo1_groot import Evo1GrootConfig
@@ -82,7 +83,8 @@ def test_dry_run_does_not_load_weights_or_create_output(tmp_path):
     assert not output.exists()
 
 
-def test_cli_real_checkpoint_processors_and_resume(monkeypatch, tmp_path):
+@pytest.mark.parametrize("benchmark", ["libero", "robomme"])
+def test_cli_real_checkpoint_processors_and_resume(monkeypatch, tmp_path, benchmark):
     import torch
     from lerobot.configs.types import FeatureType, PolicyFeature
     from lerobot.datasets import lerobot_dataset
@@ -93,6 +95,7 @@ def test_cli_real_checkpoint_processors_and_resume(monkeypatch, tmp_path):
     from lerobot_policy_vla_ttt.training.train_episode_parallel import main
 
     patch_assets(monkeypatch)
+    action_dim = 8 if benchmark == "robomme" else 7
     cfg = policy_config(
         T2MemConfig,
         max_state_dim=8,
@@ -101,7 +104,7 @@ def test_cli_real_checkpoint_processors_and_resume(monkeypatch, tmp_path):
             "observation.state": PolicyFeature(FeatureType.STATE, (8,)),
             "observation.images.image": PolicyFeature(FeatureType.VISUAL, (3, 16, 16)),
         },
-        output_features={"action": PolicyFeature(FeatureType.ACTION, (7,))},
+        output_features={"action": PolicyFeature(FeatureType.ACTION, (action_dim,))},
     )
     base_cfg = Evo1GrootConfig(**{f.name: getattr(cfg, f.name) for f in fields(Evo1GrootConfig)})
     baseline = Evo1GrootPolicy(base_cfg)
@@ -109,7 +112,7 @@ def test_cli_real_checkpoint_processors_and_resume(monkeypatch, tmp_path):
     baseline.save_pretrained(checkpoint)
     stats = {
         k: {"min": -torch.ones(n), "max": torch.ones(n)}
-        for k, n in [("action", 7), ("observation.state", 8)]
+        for k, n in [("action", action_dim), ("observation.state", 8)]
     }
     pre, post = make_pre_post_processors(base_cfg, dataset_stats=stats)
     pre.save_pretrained(checkpoint)
@@ -120,7 +123,14 @@ def test_cli_real_checkpoint_processors_and_resume(monkeypatch, tmp_path):
     dataset = tmp_path / "data"
     (dataset / "meta").mkdir(parents=True)
     (dataset / "meta/info.json").write_text(
-        json.dumps({"features": {"action": {"shape": [7]}}, "fps": 10})
+        json.dumps(
+            {
+                "features": {
+                    ("actions" if benchmark == "robomme" else "action"): {"shape": [action_dim]}
+                },
+                "fps": 10,
+            }
+        )
     )
     from types import SimpleNamespace
 
@@ -141,13 +151,31 @@ def test_cli_real_checkpoint_processors_and_resume(monkeypatch, tmp_path):
             return 5
 
         def __getitem__(self, i):
-            return {
+            frame = {
                 "observation.state": torch.full((8,), i / 10),
                 "observation.images.image": torch.full((3, 16, 16), 0.5),
-                "action": torch.full((3, 7), i / 10),
+                "action": torch.full((3, action_dim), i / 10),
                 "task": "move",
             }
 
+            if benchmark == "robomme":
+                return {
+                    "image": frame["observation.images.image"],
+                    "wrist_image": frame["observation.images.image"],
+                    "state": frame["observation.state"],
+                    "actions": frame["action"],
+                    "actions_is_pad": torch.zeros(3, dtype=torch.bool),
+                    "task": "move",
+                }
+            return frame
+
+    if benchmark == "robomme":
+        import numpy as np
+
+        from lerobot_policy_vla_ttt.training.episode_parallel import robomme
+
+        monkeypatch.setattr(robomme, "inspect_source", lambda _: (None, np.array([3]), {}, {}))
+        monkeypatch.setattr(robomme, "load_episode_tasks", lambda _: {0: "move"})
     monkeypatch.setattr(lerobot_dataset, "LeRobotDataset", TinyDataset)
     recipe_path = tmp_path / "recipe.json"
     recipe_path.write_text(
@@ -177,6 +205,8 @@ def test_cli_real_checkpoint_processors_and_resume(monkeypatch, tmp_path):
     main(
         [
             "--cpu",
+            "--benchmark",
+            benchmark,
             "--checkpoint",
             str(checkpoint),
             "--dataset-root",
@@ -216,6 +246,21 @@ def test_cli_real_checkpoint_processors_and_resume(monkeypatch, tmp_path):
             ]
         )
     assert rejected.value.code == 2
+    if benchmark == "robomme":
+        with pytest.raises(SystemExit):
+            main(
+                [
+                    "--resume",
+                    str(tmp_path / "first/step-00000001"),
+                    "--dataset-root",
+                    str(dataset),
+                    "--output",
+                    str(tmp_path / "bad-stride"),
+                    "--demo-stride",
+                    "2",
+                    "--dry-run",
+                ]
+            )
     main(
         [
             "--cpu",

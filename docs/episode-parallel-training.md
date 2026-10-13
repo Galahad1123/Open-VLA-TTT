@@ -140,3 +140,7 @@ GPU 恢复验收另发现并修复了增强 transform 字典排序导致的随�
 现在序列化保留顺序，identity 记录 `augmentation_order`；缺少该字段的旧测试
 checkpoint 不直接作为正式恢复来源。新格式恢复后的 937 个模型张量及 optimizer /
 RNG / 计数与连续运行精确一致，详见上述报告中的旧元数据恢复说明。
+
+## RoboMME
+
+增加 `--benchmark robomme` 可使用保留 demo 前缀的数据视图；H/E 从初始化 checkpoint 继承，默认 demo 每 E/2 帧写入且不产生监督。训练入口、实测范围和限制见 [RoboMME 训练适配记录](experiments/2026-10-13-robomme-observation-memory-training.md)。LIBERO 默认入口与已有恢复协议保持兼容。

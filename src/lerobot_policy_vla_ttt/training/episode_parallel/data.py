@@ -3,6 +3,7 @@
 import hashlib
 import random
 from dataclasses import dataclass
+from itertools import chain
 
 import torch
 from torch.utils.data import default_collate
@@ -19,6 +20,7 @@ class Episode:
     task: str
     start: int
     end: int
+    execution_start: int | None = None
 
 
 @dataclass(frozen=True)
@@ -86,10 +88,13 @@ def temporal_transform(image, transform, *, seed, camera):
 
 
 class EpisodeSource:
-    def __init__(self, dataset, episodes, *, execution, horizon, transform=None):
+    def __init__(self, dataset, episodes, *, execution, horizon, transform=None, demo_stride=None):
         if execution < 2 or execution % 2 or horizon < 1:
             raise ValueError("Invalid execution/horizon")
         self.dataset, self.execution, self.horizon = dataset, execution, horizon
+        self.demo_stride = execution // 2 if demo_stride is None else demo_stride
+        if not isinstance(self.demo_stride, int) or self.demo_stride < 1:
+            raise ValueError("demo_stride must be a positive integer")
         self.transform = transform
         episodes = list(episodes)
         self.episodes = {e.index: e for e in episodes}
@@ -99,16 +104,22 @@ class EpisodeSource:
         for ep in sorted(episodes, key=lambda e: e.start):
             if not 0 <= previous <= ep.start < ep.end <= len(dataset):
                 raise ValueError("Episode ranges must be disjoint and within dataset")
+            if ep.execution_start is not None and not ep.start <= ep.execution_start < ep.end:
+                raise ValueError("Invalid execution boundary")
             previous = ep.end
 
     def decision_count(self, episode_id):
         ep = self.episodes[episode_id]
-        return (ep.end - ep.start + self.execution - 1) // self.execution
+        start = ep.start if ep.execution_start is None else ep.execution_start
+        return (ep.end - start + self.execution - 1) // self.execution
 
     def events(self, episode_id, *, seed):
         ep = self.episodes[episode_id]
-        for index in range(ep.start, ep.end, self.execution // 2):
-            supervised = (index - ep.start) % self.execution == 0
+        start = ep.start if ep.execution_start is None else ep.execution_start
+        for index in chain(
+            range(ep.start, start, self.demo_stride), range(start, ep.end, self.execution // 2)
+        ):
+            supervised = index >= start and (index - start) % self.execution == 0
             frame = dict(self.dataset[index])
             if self.transform is not None:
                 for key, value in frame.items():

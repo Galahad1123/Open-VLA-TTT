@@ -1,4 +1,4 @@
-"""Independent Accelerate episode-parallel trainer for the LIBERO memory recipe.
+"""Independent Accelerate episode-parallel trainer for LIBERO and RoboMME memory recipes.
 
 Only outer slow gradients are reduced. --dry-run reads configs, never weights.
 Use --cpu for CPU smoke tests; GPU execution must be explicitly scheduled by the user.
@@ -95,8 +95,12 @@ def main(argv=None):
     sources.add_argument("--resume", type=Path, help="Trusted complete trainer checkpoint")
     parser.add_argument("--architecture", choices=KINDS)
     parser.add_argument("--dataset-root", type=Path, required=True)
-    parser.add_argument("--dataset-repo", default="HuggingFaceVLA/libero")
-    parser.add_argument("--revision", default=LIBERO_REVISION)
+    parser.add_argument("--benchmark", choices=("libero", "robomme"))
+    parser.add_argument(
+        "--demo-stride", type=int, help="RoboMME demo frame stride; defaults to E/2"
+    )
+    parser.add_argument("--dataset-repo")
+    parser.add_argument("--revision")
     parser.add_argument(
         "--output", type=Path, required=True, help="New directory, including on resume"
     )
@@ -132,10 +136,41 @@ def main(argv=None):
         checkpoint = args.checkpoint or (args.resume / "pretrained_model")
         source = PreTrainedConfig.from_pretrained(checkpoint, local_files_only=True)
         architecture = args.architecture or (source.type if source.type in KINDS else "t2mem")
-        recipe_values = resume_state["recipe"] if resume_state else {}
+        from ..baselines.prepare import ROBOMME_REVISION
+
+        old_identity = resume_state["identity"] if resume_state else {}
+        protocol = old_identity.get("sequence_protocol", {})
+        benchmark = args.benchmark or protocol.get("benchmark", "libero")
+        old_dataset = old_identity.get("dataset", {})
+        args.dataset_repo = (
+            args.dataset_repo
+            or old_dataset.get("repo")
+            or ("lerobot/robomme" if benchmark == "robomme" else "HuggingFaceVLA/libero")
+        )
+        args.revision = (
+            args.revision
+            or old_dataset.get("revision")
+            or (ROBOMME_REVISION if benchmark == "robomme" else LIBERO_REVISION)
+        )
+        recipe_values = (
+            resume_state["recipe"]
+            if resume_state
+            else (
+                {"horizon": source.chunk_size, "execution": source.n_action_steps}
+                if benchmark == "robomme"
+                else {}
+            )
+        )
         if args.recipe:
             recipe_values = recipe_values | json.loads(args.recipe.read_text())
         recipe = Recipe(**recipe_values)
+        demo_stride = (
+            args.demo_stride
+            if args.demo_stride is not None
+            else protocol.get("demo_stride", recipe.execution // 2)
+        )
+        if demo_stride < 1 or (benchmark == "libero" and args.demo_stride is not None):
+            raise ValueError("demo-stride must be positive and is only supported for RoboMME")
         world = int(os.environ.get("WORLD_SIZE", "1"))
         if recipe.global_batch_size % world:
             raise ValueError("global_batch_size must be divisible by WORLD_SIZE")
@@ -143,10 +178,11 @@ def main(argv=None):
         # CPU here avoids GPU discovery during --dry-run.
         resolved = resolve_config(source, architecture, recipe, device="cpu", overrides=overrides)
         info = json.loads((args.dataset_root / "meta/info.json").read_text())
-        if info["features"]["action"]["shape"] != [7]:
-            raise ValueError("This recipe entry point requires canonical LIBERO action dimension 7")
-        if source.output_features and source.output_features["action"].shape != (7,):
-            raise ValueError("Checkpoint action dimension must match LIBERO")
+        action_key, action_dim = ("actions", 8) if benchmark == "robomme" else ("action", 7)
+        if info["features"][action_key]["shape"] != [action_dim]:
+            raise ValueError(f"Dataset action dimension must be {action_dim} for {benchmark}")
+        if source.output_features and source.output_features["action"].shape != (action_dim,):
+            raise ValueError(f"Checkpoint action dimension must match {benchmark}")
         if args.augmentation_config:
             transforms = json.loads(args.augmentation_config.read_text())
         elif resume_state:
@@ -176,6 +212,15 @@ def main(argv=None):
                 else str(checkpoint.resolve())
             ),
         }
+        if benchmark == "robomme":
+            identity["sequence_protocol"] = {
+                "benchmark": "robomme",
+                "version": 1,
+                "demo_stride": demo_stride,
+                "demo_supervision": False,
+                "reset_at_execution": False,
+                "execution_clock": "exec_start_idx",
+            }
         if resume_state and (
             resume_state["recipe"] != dataclasses.asdict(recipe)
             or resume_state["identity"] != identity
@@ -255,31 +300,43 @@ def main(argv=None):
             pretrained_path=checkpoint,
             preprocessor_overrides={"device_processor": {"device": str(accelerator.device)}},
         )
-        dataset = LeRobotDataset(
-            args.dataset_repo,
-            root=args.dataset_root,
-            revision=args.revision,
-            delta_timestamps={"action": [i / info["fps"] for i in range(recipe.horizon)]},
-            video_backend="pyav",
-        )
-        episodes = []
-        for row in dataset.meta.episodes:
-            if len(row["tasks"]) != 1:
-                raise ValueError("Recipe requires one task per episode")
-            episodes.append(
-                Episode(
-                    int(row["episode_index"]),
-                    str(row["tasks"][0]),
-                    int(row["dataset_from_index"]),
-                    int(row["dataset_to_index"]),
-                )
+        if benchmark == "robomme":
+            from .episode_parallel.robomme import RoboMMEMemoryDataset
+
+            dataset = RoboMMEMemoryDataset(
+                args.dataset_root,
+                horizon=recipe.horizon,
+                revision=args.revision,
+                repo_id=args.dataset_repo,
             )
+            episodes = dataset.episodes
+        else:
+            dataset = LeRobotDataset(
+                args.dataset_repo,
+                root=args.dataset_root,
+                revision=args.revision,
+                delta_timestamps={"action": [i / info["fps"] for i in range(recipe.horizon)]},
+                video_backend="pyav",
+            )
+            episodes = []
+            for row in dataset.meta.episodes:
+                if len(row["tasks"]) != 1:
+                    raise ValueError("Recipe requires one task per episode")
+                episodes.append(
+                    Episode(
+                        int(row["episode_index"]),
+                        str(row["tasks"][0]),
+                        int(row["dataset_from_index"]),
+                        int(row["dataset_to_index"]),
+                    )
+                )
         source_data = EpisodeSource(
             dataset,
             episodes,
             execution=recipe.execution,
             horizon=recipe.horizon,
             transform=ImageTransforms(transform_config),
+            demo_stride=demo_stride,
         )
     except Exception as exc:
         error = f"Initialization failed: {type(exc).__name__}: {exc}"

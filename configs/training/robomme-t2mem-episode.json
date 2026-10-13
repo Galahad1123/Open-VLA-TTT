@@ -1,0 +1,11 @@
+{
+  "steps": 2000,
+  "phase_length": 500,
+  "global_batch_size": 4,
+  "tbptt_events": 8,
+  "execution": 10,
+  "horizon": 20,
+  "warmup_steps": 50,
+  "seed": 1000,
+  "save_every": 250
+}
