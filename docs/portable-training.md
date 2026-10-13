@@ -10,6 +10,10 @@
 
 ## 1. 安装并准备资源
 
+以下三种安装方法任选其一。
+
+### 方法一：按原锁文件从官方源安装
+
 检出团队约定的 Git commit/tag，在仓库根目录执行：
 
 ```bash
@@ -18,6 +22,83 @@ cp configs/machine.example.toml configs/machine.local.toml
 ```
 
 主环境使用 Python 3.12 或 3.13；依赖按 `uv.lock` 安装，不复制其他机器的 `.venv`。
+
+### 方法二：通过清华 PyPI 镜像安装导出的依赖清单
+
+`uv.lock` 包含官方源的文件直链；给 `uv sync --frozen` 设置镜像不能可靠地替换这些下载地址。
+仓库提供从主锁文件导出的 `requirements-training.txt`，包含默认训练环境和 dev 依赖的
+精确版本、平台条件及 SHA256，不包含可编辑的本地项目，也不包含独立的 LIBERO/ROBOMME 评测环境。
+此方法保留 `uv.lock` 作为唯一依赖版本来源，不手改下载 URL、不重新解析版本。
+
+在新机器的仓库根目录执行（已有环境正在训练时不要执行同步安装）：
+
+```bash
+uv venv --python 3.12 .venv
+uv pip sync --python .venv/bin/python requirements-training.txt \
+  --default-index https://pypi.tuna.tsinghua.edu.cn/simple \
+  --require-hashes
+uv pip install --python .venv/bin/python --no-deps \
+  --default-index https://pypi.tuna.tsinghua.edu.cn/simple \
+  -e packages/eval-client -e .
+uv pip check --python .venv/bin/python
+cp configs/machine.example.toml configs/machine.local.toml
+```
+
+第三方依赖必须匹配锁定的版本和文件哈希；镜像缺少文件或校验不符时安装会失败，
+不要删除版本约束或关闭校验。本地两个 editable 包使用当前检出的源码，
+其隔离构建依赖（如 hatchling）不在这份运行依赖哈希清单内。
+Python 解释器下载不走 PyPI 镜像；不同系统、Python 版本或架构会按条件选择不同依赖和 wheel。
+跨机器复现建议统一使用 Python 3.12、Linux x86_64 和同一 Git commit。
+
+安装后，下文命令中的 `uv run --frozen` 改为 `uv run --no-sync`，避免再次按照官方源锁文件同步。
+例如：
+
+```bash
+CUDA_VISIBLE_DEVICES=0 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+uv run --no-sync python -m lerobot_policy_vla_ttt.training.train_episode_parallel \
+  --machine configs/machine.local.toml --run-name t2mem-libero-seed1000-run01 \
+  --architecture t2mem --recipe configs/ttt/t2mem/libero/recipe.json
+```
+
+每次团队更新 `uv.lock`，同步重新生成并提交清单；不要单独维护第二套版本：
+
+```bash
+uv export --frozen --no-emit-local -o requirements-training.txt
+```
+
+相关说明：[uv 导出与安装命令](https://docs.astral.sh/uv/reference/cli/)、
+[uv 自动同步](https://docs.astral.sh/uv/concepts/projects/sync/)。
+
+### 方法三：备份锁文件后替换下载域名
+
+以下命令已由使用者在目标机器验证可行。在仓库根目录执行；首次备份前确认
+`uv.lock` 是仓库原版，且没有需要保留的同名 `uv.lock.backup`，避免重复执行覆盖原始备份：
+
+```bash
+cp uv.lock uv.lock.backup
+sed -i 's#https://files.pythonhosted.org#https://pypi.tuna.tsinghua.edu.cn#g' uv.lock
+uv sync --frozen
+```
+
+这是 Linux/GNU sed 的写法。替换只改变下载域名，保留包版本、文件路径和 SHA256；
+`--frozen` 不重新解析依赖，也不关闭文件哈希校验。
+但此方法依赖镜像提供与官方相同的文件路径，不能保证所有文件或未来镜像布局都适用。
+它也没有修改索引地址或构建依赖的来源，因此不保证所有网络请求都走清华源。
+若下载失败或校验不符，不要关闭校验，恢复原锁文件后改用方法一或方法二。
+
+安装完成后恢复仓库原锁文件（不会修改已安装的环境）：
+
+```bash
+cp uv.lock.backup uv.lock
+uv pip check --python .venv/bin/python
+```
+
+后续训练使用 `uv run --no-sync`，参数同方法二，避免重新按官方直链同步。
+不要提交替换后的锁文件或 `uv.lock.backup`；团队仍以原版 `uv.lock` 为版本依据。
+机器路径配置按下文填写，已有环境正在训练时不要执行上述安装命令。
+
+### 检查 CUDA 并准备模型、数据
+
 当前主锁文件包含 Torch 2.11 / CUDA 13 相关运行库，目标 GPU 和驱动需要兼容。
 可以先检查 CUDA，再进行下方短程训练验收：
 
@@ -39,22 +120,54 @@ uv run --frozen python -c 'import torch; print(torch.__version__, torch.version.
 复制 HF snapshot 时必须保留可用的 blobs 链接，或者复制链接所指的真实文件。
 数据集不能使用早期 smoke 的部分下载；资源目录在训练期间保持只读，不在其中放日志。
 
-从正确仓库完整下载（在目标机器执行，按需修改绝对路径；下载时不要设置离线模式）：
+### 通过 Hugging Face 镜像下载数据集和 VLM
+
+在目标机器执行。下载工具可以安装在独立的下载环境（例如 conda 的 base 环境）中；
+不要在已按锁文件安装的训练 `.venv` 中执行 `pip install -U`，以免改变训练依赖版本。
 
 ```bash
-HF_HUB_OFFLINE=0 TRANSFORMERS_OFFLINE=0 uv run --frozen hf download HuggingFaceVLA/libero \
+pip install -U huggingface_hub
+export HF_ENDPOINT=https://hf-mirror.com
+unset HF_HUB_OFFLINE TRANSFORMERS_OFFLINE
+```
+
+`HF_ENDPOINT` 只影响当前终端及其子进程的 Hugging Face 请求，与前面的清华 PyPI 源是两件事。
+以下命令使用 `~/datasets/LIBERO` 和 `~/models/InternVL3-1B-hf`，可以按磁盘位置修改。
+为与共同训练资源保持一致，命令显式指定上表中的 revision；省略 `--revision` 会下载仓库当前默认分支，
+不保证与本机已有资源相同。
+
+先完整下载 **HuggingFaceVLA/libero** 数据集：
+
+```bash
+hf download \
+  HuggingFaceVLA/libero \
   --repo-type dataset \
   --revision 86958911c0f959db2bbbdb107eb3e17c5f9c798e \
-  --local-dir /home/hello/lizk/datasets/HuggingFaceVLA-libero
+  --local-dir ~/datasets/LIBERO
+```
+
+再完整下载 **OpenGVLab/InternVL3-1B-hf** 模型（包括 tokenizer、配置和权重）：
+
+```bash
+hf download \
+  OpenGVLab/InternVL3-1B-hf \
+  --revision 014c0583a0d4bedf29fbe2dbff4f865eb998e171 \
+  --local-dir ~/models/InternVL3-1B-hf
 ```
 
 先查看下载清单和体积时，在同一命令末尾加 `--dry-run`；确认后去掉它执行下载。
+下载中断后重新运行同一命令即可继续，保留下载目录中的 `.cache/huggingface` 元数据。
+若镜像不可用，可在当前终端执行 `unset HF_ENDPOINT`，再运行相同命令从官方源下载。
 请使用一个专用于该仓库的新目录，不要覆盖已有 `lerobot/libero` 目录，以免残留文件混入。
-然后更新 `configs/machine.local.toml` 的对应字段：
+目录名 `LIBERO` 不决定数据来源，仓库 ID 必须是 `HuggingFaceVLA/libero`。
+
+共同 Stage1 5k 的 `pretrained_model/` 仍需从已有训练机器复制；上述 VLM 下载不能替代该检查点。
+然后更新 `configs/machine.local.toml` 的对应字段（以下假设用户名为 `hello`，请改成真实绝对路径）：
 
 ```toml
 [assets]
-libero_dataset = "/home/hello/lizk/datasets/HuggingFaceVLA-libero"
+libero_dataset = "/home/hello/datasets/LIBERO"
+vlm = "/home/hello/models/InternVL3-1B-hf"
 ```
 
 这只是字段示例，保留本机配置中其他模型和存储字段。
