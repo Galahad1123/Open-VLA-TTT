@@ -20,10 +20,13 @@ def canonical(value):
     return json.loads(json.dumps(value, default=str))
 
 
-def model_contract(policy):
+def model_contract(policy, *, portable=False):
     values = asdict(policy.config)
     for name in ("device", "memory_training", "pretrained_path"):
         values.pop(name, None)
+    if portable:
+        # Portable CLI identity validates the complete VLM bytes separately.
+        values.pop("vlm_model_name", None)
     return canonical(values)
 
 
@@ -72,7 +75,7 @@ def save_checkpoint(path, policy, control, pre, post, accelerator, *, recipe, id
                     "world_size": accelerator.num_processes,
                     "recipe": asdict(recipe),
                     "identity": canonical(identity),
-                    "model_contract": model_contract(policy),
+                    "model_contract": model_contract(policy, portable=identity.get("version") == 2),
                     "step": step,
                     "control": control.state_dict(),
                     "rank_rng": states,
@@ -101,7 +104,7 @@ def load_checkpoint(path, policy, control, accelerator, *, recipe, identity):
             "world_size": accelerator.num_processes,
             "recipe": asdict(recipe),
             "identity": canonical(identity),
-            "model_contract": model_contract(policy),
+            "model_contract": model_contract(policy, portable=identity.get("version") == 2),
         }
         for key, expected in checks.items():
             if state[key] != expected:

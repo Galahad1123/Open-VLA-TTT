@@ -29,6 +29,8 @@ def run(
     identity,
     resume=None,
     stop_after=None,
+    launch=None,
+    output_prepared=False,
 ):
     """Run recipe budget, or stop early at a resumable boundary for a smoke test."""
     if stop_after is not None and stop_after < 1:
@@ -57,7 +59,9 @@ def run(
     error = None
     if accelerator.is_main_process:
         try:
-            output.mkdir(parents=True, exist_ok=False)
+            output.mkdir(parents=True, exist_ok=output_prepared)
+            if (output / "run.json").exists() or (output / "metrics.jsonl").exists():
+                raise ValueError("Output already contains a run")
             manifest = {
                 "recipe": asdict(recipe),
                 "world_size": accelerator.num_processes,
@@ -69,6 +73,7 @@ def run(
                 "resume": str(resume) if resume else None,
                 "start_step": step,
                 "device_type": accelerator.device.type,
+                "launch": launch,
             }
             (output / "run.json").write_text(json.dumps(canonical(manifest), indent=2) + "\n")
         except Exception as exc:

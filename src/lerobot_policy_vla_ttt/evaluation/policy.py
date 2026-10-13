@@ -20,6 +20,7 @@ from ..models.mag.modeling_mag import MAGPolicy
 from ..models.mal.modeling_mal import MALPolicy
 from ..models.robottt.modeling_robottt import RoboTTTPolicy
 from ..models.t2mem.modeling_t2mem import T2MemPolicy
+from ..portability import relocate_vlm
 
 MEMORY_POLICIES = {
     "aqmem": AQMemPolicy,
@@ -83,11 +84,21 @@ def observation_batch(observation):
 
 
 class Evo1Inference:
-    def __init__(self, checkpoint, implementation, benchmark, device="cuda", n_action_steps=10):
+    def __init__(
+        self,
+        checkpoint,
+        implementation,
+        benchmark,
+        device="cuda",
+        n_action_steps=10,
+        *,
+        vlm_path=None,
+    ):
         path = Path(checkpoint).resolve()
         if not path.is_dir():
             raise ValueError("Use a downloaded, pinned local checkpoint directory")
         config = PreTrainedConfig.from_pretrained(path, local_files_only=True)
+        config = relocate_vlm(config, vlm_path)
         action_dim = validate_config(config, benchmark, n_action_steps)
         config.device = device
         config.n_action_steps = n_action_steps
@@ -125,6 +136,7 @@ class Evo1Inference:
             "action_space": "eef_delta" if benchmark == "libero" else "joint_angle",
             "implementation": implementation,
             "checkpoint": str(path),
+            "vlm_model_name": config.vlm_model_name,
             "checkpoint_sha256": checkpoint_identity(path),
             "versions": {
                 name: importlib.metadata.version(name)

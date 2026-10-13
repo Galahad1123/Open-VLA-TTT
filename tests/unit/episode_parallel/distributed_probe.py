@@ -13,6 +13,7 @@ from episode_parallel.test_engine import episode_events, make_policy
 from lerobot_policy_vla_ttt.training.episode_parallel.config import Recipe
 from lerobot_policy_vla_ttt.training.episode_parallel.engine import backward_episode, episode_rng
 from lerobot_policy_vla_ttt.training.episode_parallel.optim import PhaseOptimizers
+from lerobot_policy_vla_ttt.training.episode_parallel.run_files import run_directory
 from lerobot_policy_vla_ttt.training.episode_parallel.runner import run
 from lerobot_policy_vla_ttt.training.episode_parallel.runtime import (
     broadcast_model,
@@ -29,6 +30,8 @@ def main():
     accelerator = Accelerator(cpu=args.device == "cpu", mixed_precision="no")
     torch.set_num_threads(1)
     args.output.mkdir(parents=True, exist_ok=True)
+    with run_directory(args.output / "logged", accelerator):
+        print(f"rank {accelerator.process_index} ready", flush=True)
     result = {}
     for kind in ("t2mem", "aqmem", "mac", "mag", "mal"):
         with pytest.MonkeyPatch.context() as patch:

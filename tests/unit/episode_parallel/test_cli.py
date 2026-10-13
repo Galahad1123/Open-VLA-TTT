@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import subprocess
 import sys
 from dataclasses import fields
@@ -82,6 +83,39 @@ def test_dry_run_does_not_load_weights_or_create_output(tmp_path):
     assert resolved["augmentation"]["enable"] is True
     assert not output.exists()
 
+    machine = tmp_path / "machine.toml"
+    vlm = tmp_path / "vlm"
+    vlm.mkdir()
+    machine.write_text(
+        '[assets]\ninitial_checkpoint="checkpoint"\n'
+        'libero_dataset="dataset"\nvlm="vlm"\n'
+        '[storage]\nruns_root="runs"\nhf_home="cache"\n'
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "lerobot_policy_vla_ttt.training.train_episode_parallel",
+            "--machine",
+            str(machine),
+            "--run-name",
+            "portable",
+            "--dry-run",
+        ],
+        env=env,
+        cwd=root,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    resolved = json.loads(result.stdout)
+    assert resolved["policy"]["vlm_model_name"] == str(vlm)
+    assert resolved["paths"]["output"] == str(tmp_path / "runs/portable")
+    assert resolved["hf_home"] == str(tmp_path / "cache")
+    assert resolved["asset_validation"] == "metadata_only"
+    assert not (tmp_path / "runs").exists()
+
 
 @pytest.mark.parametrize("benchmark", ["libero", "robomme"])
 def test_cli_real_checkpoint_processors_and_resume(monkeypatch, tmp_path, benchmark):
@@ -96,8 +130,13 @@ def test_cli_real_checkpoint_processors_and_resume(monkeypatch, tmp_path, benchm
 
     patch_assets(monkeypatch)
     action_dim = 8 if benchmark == "robomme" else 7
+    vlm = tmp_path / "vlm"
+    vlm.mkdir()
+    (vlm / "config.json").write_text('{"fixture": "tiny"}')
+    (vlm / "model.safetensors").write_bytes(b"tiny fixture asset")
     cfg = policy_config(
         T2MemConfig,
+        vlm_model_name=str(vlm),
         max_state_dim=8,
         max_action_dim=8,
         input_features={
@@ -264,10 +303,49 @@ def test_cli_real_checkpoint_processors_and_resume(monkeypatch, tmp_path, benchm
     main(
         [
             "--cpu",
-            "--resume",
-            str(tmp_path / "first/step-00000001"),
+            "--checkpoint",
+            str(checkpoint),
             "--dataset-root",
             str(dataset),
+            "--output",
+            str(tmp_path / "whole"),
+            "--benchmark",
+            benchmark,
+            "--recipe",
+            str(recipe_path),
+            "--memory-config",
+            str(memory_path),
+        ]
+    )
+    # Resource relocation must preserve exact resume, while changed content must not.
+    moved_dataset = tmp_path / "relocated/data"
+    shutil.move(dataset, moved_dataset)
+    moved_vlm = tmp_path / "relocated/vlm"
+    shutil.move(vlm, moved_vlm)
+    moved_checkpoint = tmp_path / "relocated/checkpoint"
+    shutil.move(tmp_path / "first/step-00000001", moved_checkpoint)
+    resume_args = [
+        "--cpu",
+        "--resume",
+        str(moved_checkpoint),
+        "--dataset-root",
+        str(moved_dataset),
+        "--vlm-path",
+        str(moved_vlm),
+    ]
+    (moved_vlm / "model.safetensors").write_bytes(b"wrong resource")
+    with pytest.raises(SystemExit) as rejected:
+        main(resume_args + ["--output", str(tmp_path / "wrong-vlm")])
+    assert rejected.value.code == 2
+    (moved_vlm / "model.safetensors").write_bytes(b"tiny fixture asset")
+    (moved_dataset / "frames.parquet").write_bytes(b"unexpected payload")
+    with pytest.raises(SystemExit) as rejected:
+        main(resume_args + ["--output", str(tmp_path / "wrong-data")])
+    assert rejected.value.code == 2
+    (moved_dataset / "frames.parquet").unlink()
+    main(
+        resume_args
+        + [
             "--output",
             str(tmp_path / "second"),
         ]
@@ -275,6 +353,25 @@ def test_cli_real_checkpoint_processors_and_resume(monkeypatch, tmp_path, benchm
     saved = torch.load(tmp_path / "second/step-00000002/training.pt", weights_only=False)
     assert saved["control"]["counts"] == {"memory": 1, "policy": 1}
     assert saved["totals"]["episodes"] == 2
+    assert saved["identity"] == saved_first["identity"]
+    from safetensors.torch import load_file
+
+    from .test_checkpoint import assert_control_equal
+
+    expected = torch.load(tmp_path / "whole/step-00000002/training.pt", weights_only=False)
+    assert_control_equal(saved["control"], expected["control"])
+    torch.testing.assert_close(
+        load_file(tmp_path / "whole/step-00000002/pretrained_model/model.safetensors"),
+        load_file(tmp_path / "second/step-00000002/pretrained_model/model.safetensors"),
+        atol=0,
+        rtol=0,
+    )
+    log = (tmp_path / "second/logs/rank-0.log").read_text()
+    assert '"step": 2' in log
+    manifest = json.loads((tmp_path / "second/run.json").read_text())
+    assert manifest["launch"]["paths"]["dataset_root"] == str(moved_dataset)
+    assert manifest["launch"]["environment"]["versions"]["torch"]
+    assert manifest["launch"]["environment"]["git_commit"]
 
 
 def test_indexed_cuda_device_resolves_to_lerobot_device_type(monkeypatch):

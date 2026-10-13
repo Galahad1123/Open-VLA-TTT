@@ -1,5 +1,13 @@
 # LIBERO T²Mem episode recipe
 
+Supported training data: `HuggingFaceVLA/libero` at
+`86958911c0f959db2bbbdb107eb3e17c5f9c798e` only. `lerobot/libero` is a different
+export and is not a drop-in replacement for this recipe.
+
+`recipe.json` records the agreed TBPTT=8 defaults explicitly for portable launches.
+Machine paths belong in [machine.local.toml](../../../machine.example.toml), not in
+the recipe. Follow the [portable training guide](../../../../docs/portable-training.md).
+
 `recipe-72gb.json` is an explicit outer-loop recipe for
 `python -m lerobot_policy_vla_ttt.training.train_episode_parallel --recipe ...`.
 It is not a standalone model config. Model dimensions, processors and action

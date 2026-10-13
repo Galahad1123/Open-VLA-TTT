@@ -80,3 +80,22 @@ RoboMME 记忆版闭环评测的 demo 注入尚未在本次接入；不能直接
 - `run/step-00000002/`：测试 checkpoint。
 
 结论：**当前 batch=4、TBPTT=8 配置已通过真实权重、真实 RoboMME 完整 episode 的单卡两阶段训练短测，无需因本次显存结果缩小 batch 或 TBPTT。**这不是全数据最长轨迹、多卡 NCCL 或长期数值稳定性的验收。正式训练应重新从 Stage1 初始化，并使用 `configs/training/robomme-t2mem-episode.json` 的 `phase_length=500`；不要从本次阶段长度为 1 的测试 checkpoint 恢复正式训练。
+
+## 合入 master 时的可迁移性兼容
+
+集成 master 的机器配置、VLM 路径覆盖、内容哈希 identity v2 及运行目录日志管理。新训练生成可迁移 checkpoint；原有路径绑定 checkpoint 继续沿用原恢复协议，不会自动升级成可迁移身份。
+
+机器配置示例中的 `assets.libero_dataset` 专用于 LIBERO。RoboMME 请显式传入 `--dataset-root` 和对应 Stage1 `--checkpoint`，它们优先于机器配置；VLM 路径可通过 `assets.vlm` 或 `--vlm-path` 指定。例如在目标机器仓库根目录：
+
+```bash
+PYTHONPATH=src .venv/bin/python -m lerobot_policy_vla_ttt.training.train_episode_parallel \
+  --machine configs/machine.local.toml --run-name robomme-t2mem \
+  --benchmark robomme --architecture t2mem \
+  --checkpoint /srv/models/robomme-stage1-5k/pretrained_model \
+  --dataset-root /srv/datasets/robomme \
+  --recipe configs/training/robomme-t2mem-episode.json --dry-run
+```
+
+将路径替换为目标机器实际位置。`--dry-run` 仅检查元数据，正式启动才验证数据、VLM 和初始化资源的内容哈希。代码中的训练参数不再依赖本机 `/home/hello/...` 路径；上文绝对路径仅记录本次实验资产位置。
+
+合并后的完整 CPU/Gloo 回归为 **231 passed、7 skipped**（71.90 秒），Ruff 与 diff 空白检查通过。LIBERO、RoboMME 均测试了数据/VLM/checkpoint 路径搬迁后的精确恢复与资源内容变更拒绝；已有 GPU 短测 checkpoint 的旧版 identity 也通过了恢复 dry-run。独立代码审查未发现 critical/important 问题。合并验证日志为 `artifacts/robomme-memory-preflight-20261013/merge-pytest.log`。

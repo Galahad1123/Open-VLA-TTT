@@ -2,6 +2,8 @@
 
 import argparse
 import logging
+import sys
+from pathlib import Path
 from threading import Lock
 
 import numpy as np
@@ -82,6 +84,8 @@ def make_server(policy, host="127.0.0.1", port=8000):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint", required=True)
+    parser.add_argument("--machine", type=Path, help="Machine TOML (VLM path and HF cache)")
+    parser.add_argument("--vlm-path", type=Path, help="Override the checkpoint's VLM location")
     parser.add_argument(
         "--implementation",
         choices=["native", "local", "evo1_groot", "robottt", "mac", "mag", "mal", "aqmem", "t2mem"],
@@ -93,10 +97,23 @@ def main():
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--n-action-steps", type=int, default=10)
     args = parser.parse_args()
+    from ..portability import configure_cache, read_machine
+
+    try:
+        machine = read_machine(args.machine)
+        configure_cache(machine, "lerobot_policy_vla_ttt.evaluation.server", sys.argv[1:])
+        vlm_path = args.vlm_path or machine.get("assets", {}).get("vlm")
+    except (ValueError, OSError) as exc:
+        parser.error(str(exc))
     from .policy import Evo1Inference
 
     policy = Evo1Inference(
-        args.checkpoint, args.implementation, args.benchmark, args.device, args.n_action_steps
+        args.checkpoint,
+        args.implementation,
+        args.benchmark,
+        args.device,
+        args.n_action_steps,
+        vlm_path=vlm_path,
     )
     print(f"Serving {policy.metadata} on {args.host}:{args.port}", flush=True)
     with make_server(policy, args.host, args.port) as server:

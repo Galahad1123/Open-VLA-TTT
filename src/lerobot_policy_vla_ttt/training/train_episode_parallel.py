@@ -9,11 +9,13 @@ import dataclasses
 import hashlib
 import json
 import os
+import sys
 from pathlib import Path
 
 from lerobot.configs.policies import PreTrainedConfig
 
 from ..models.evo1_groot.configuration_evo1_groot import Evo1GrootConfig
+from ..portability import configure_cache, content_digest, local_vlm, relocate_vlm, resolve_machine
 from .episode_parallel.checkpoint import canonical
 from .episode_parallel.config import Recipe
 from .train_robottt import ARCHITECTURES
@@ -90,11 +92,16 @@ def metadata_digest(root):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    sources = parser.add_mutually_exclusive_group(required=True)
+    sources = parser.add_mutually_exclusive_group()
     sources.add_argument("--checkpoint", type=Path, help="Weight initialization, not exact resume")
     sources.add_argument("--resume", type=Path, help="Trusted complete trainer checkpoint")
     parser.add_argument("--architecture", choices=KINDS)
-    parser.add_argument("--dataset-root", type=Path, required=True)
+    parser.add_argument("--machine", type=Path, help="Machine-local TOML paths")
+    parser.add_argument("--run-name", help="New directory name under machine storage.runs_root")
+    parser.add_argument(
+        "--vlm-path", type=Path, help="Local VLM override, without editing checkpoints"
+    )
+    parser.add_argument("--dataset-root", type=Path)
     parser.add_argument("--benchmark", choices=("libero", "robomme"))
     parser.add_argument(
         "--demo-stride", type=int, help="RoboMME demo frame stride; defaults to E/2"
@@ -102,7 +109,7 @@ def main(argv=None):
     parser.add_argument("--dataset-repo")
     parser.add_argument("--revision")
     parser.add_argument(
-        "--output", type=Path, required=True, help="New directory, including on resume"
+        "--output", type=Path, help="New directory, including on resume; alternative to --run-name"
     )
     parser.add_argument(
         "--recipe", type=Path, help="JSON Recipe overrides; defaults follow LIBERO recipe"
@@ -120,6 +127,14 @@ def main(argv=None):
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
     try:
+        machine = resolve_machine(args)
+        configure_cache(
+            machine, __spec__.name if __spec__ else __name__, sys.argv[1:] if argv is None else argv
+        )
+        if not (args.checkpoint or args.resume) or args.dataset_root is None or args.output is None:
+            raise ValueError(
+                "Provide checkpoint/resume, dataset-root and output via CLI or --machine"
+            )
         if args.output.exists():
             raise ValueError("Use a new output directory")
         if args.stop_after is not None and args.stop_after < 1:
@@ -135,6 +150,10 @@ def main(argv=None):
             )
         checkpoint = args.checkpoint or (args.resume / "pretrained_model")
         source = PreTrainedConfig.from_pretrained(checkpoint, local_files_only=True)
+        source = relocate_vlm(source, args.vlm_path)
+        portable = resume_state is None or resume_state["identity"].get("version") == 2
+        if not args.dry_run and portable:
+            source = local_vlm(source)
         architecture = args.architecture or (source.type if source.type in KINDS else "t2mem")
         from ..baselines.prepare import ROBOMME_REVISION
 
@@ -171,6 +190,7 @@ def main(argv=None):
         )
         if demo_stride < 1 or (benchmark == "libero" and args.demo_stride is not None):
             raise ValueError("demo-stride must be positive and is only supported for RoboMME")
+        args.benchmark, args.demo_stride = benchmark, demo_stride
         world = int(os.environ.get("WORLD_SIZE", "1"))
         if recipe.global_batch_size % world:
             raise ValueError("global_batch_size must be divisible by WORLD_SIZE")
@@ -221,9 +241,34 @@ def main(argv=None):
                 "reset_at_execution": False,
                 "execution_clock": "exec_start_idx",
             }
+        paths = {
+            name: str(getattr(args, name)) if getattr(args, name) else None
+            for name in ("checkpoint", "resume", "dataset_root", "output")
+        }
+        paths["vlm"] = source.vlm_model_name
+        if portable:
+            identity["version"] = 2
+            identity["dataset"].pop("root")
+            # Dry-run inspects small metadata only; it never claims byte validation.
+            if not args.dry_run:
+                print(
+                    "Validating dataset, VLM and initialization content (SHA256)...",
+                    file=sys.stderr,
+                )
+                identity["dataset"]["content_sha256"] = content_digest(args.dataset_root)
+                identity["vlm_sha256"] = content_digest(Path(source.vlm_model_name))
+                if resume_state is None:
+                    identity["initialization"] = {"sha256": content_digest(checkpoint)}
+        expected_identity = resume_state["identity"] if resume_state else None
+        if resume_state and portable and args.dry_run:
+            expected_identity = dict(expected_identity)
+            expected_identity.pop("vlm_sha256", None)
+            expected_identity["dataset"] = {
+                k: v for k, v in expected_identity["dataset"].items() if k != "content_sha256"
+            }
         if resume_state and (
             resume_state["recipe"] != dataclasses.asdict(recipe)
-            or resume_state["identity"] != identity
+            or expected_identity != identity
             or resume_state["world_size"] != world
         ):
             raise ValueError("Resume recipe, identity or world_size mismatch")
@@ -238,6 +283,10 @@ def main(argv=None):
                             "identity": identity,
                             "world_size": world,
                             "gradient_reduction": "explicit_sum",
+                            "paths": paths,
+                            "machine": machine,
+                            "hf_home": os.environ.get("HF_HOME"),
+                            "asset_validation": "metadata_only",
                         }
                     ),
                     indent=2,
@@ -247,19 +296,42 @@ def main(argv=None):
     except (ValueError, KeyError, OSError, TypeError) as exc:
         parser.error(str(exc))
 
+    execute(
+        args,
+        source,
+        architecture,
+        recipe,
+        overrides,
+        checkpoint,
+        info,
+        transform_config,
+        identity,
+        machine,
+        paths,
+    )
+
+
+def execute(
+    args,
+    source,
+    architecture,
+    recipe,
+    overrides,
+    checkpoint,
+    info,
+    transform_config,
+    identity,
+    machine,
+    paths,
+):
+
     from datetime import timedelta
 
     import torch
     from accelerate import Accelerator
     from accelerate.utils import InitProcessGroupKwargs
-    from lerobot.datasets.lerobot_dataset import LeRobotDataset
-    from lerobot.transforms import ImageTransforms
 
-    from ..cli import make_pre_post_processors
-    from ..models.evo1_groot.modeling_evo1_groot import Evo1GrootPolicy
-    from .episode_parallel.data import Episode, EpisodeSource
-    from .episode_parallel.runner import run
-    from .episode_parallel.runtime import collective_error
+    from .episode_parallel.run_files import environment, run_directory
 
     accelerator = Accelerator(
         cpu=args.cpu,
@@ -273,6 +345,46 @@ def main(argv=None):
     # episode RNG context require a concrete index. Preserve assigned DDP ranks.
     if accelerator.device.type == "cuda" and accelerator.device.index is None:
         accelerator.state.device = torch.device("cuda", torch.cuda.current_device())
+    with run_directory(args.output, accelerator):
+        _execute_run(
+            args,
+            source,
+            architecture,
+            recipe,
+            overrides,
+            checkpoint,
+            info,
+            transform_config,
+            identity,
+            accelerator,
+            {"machine": machine, "paths": paths, "environment": environment(accelerator)},
+        )
+    accelerator.end_training()
+
+
+def _execute_run(
+    args,
+    source,
+    architecture,
+    recipe,
+    overrides,
+    checkpoint,
+    info,
+    transform_config,
+    identity,
+    accelerator,
+    launch,
+):
+    import torch
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+    from lerobot.transforms import ImageTransforms
+
+    from ..cli import make_pre_post_processors
+    from ..models.evo1_groot.modeling_evo1_groot import Evo1GrootPolicy
+    from .episode_parallel.data import Episode, EpisodeSource
+    from .episode_parallel.runner import run
+    from .episode_parallel.runtime import collective_error
+
     error = None
     try:
         # Set only this process's random streams and current CUDA device.
@@ -300,7 +412,7 @@ def main(argv=None):
             pretrained_path=checkpoint,
             preprocessor_overrides={"device_processor": {"device": str(accelerator.device)}},
         )
-        if benchmark == "robomme":
+        if args.benchmark == "robomme":
             from .episode_parallel.robomme import RoboMMEMemoryDataset
 
             dataset = RoboMMEMemoryDataset(
@@ -336,7 +448,7 @@ def main(argv=None):
             execution=recipe.execution,
             horizon=recipe.horizon,
             transform=ImageTransforms(transform_config),
-            demo_stride=demo_stride,
+            demo_stride=args.demo_stride,
         )
     except Exception as exc:
         error = f"Initialization failed: {type(exc).__name__}: {exc}"
@@ -352,8 +464,9 @@ def main(argv=None):
         identity=identity,
         resume=args.resume,
         stop_after=args.stop_after,
+        launch=launch,
+        output_prepared=True,
     )
-    accelerator.end_training()
 
 
 if __name__ == "__main__":

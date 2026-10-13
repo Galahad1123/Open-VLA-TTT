@@ -6,6 +6,8 @@ RoboTTT 见 [RoboTTT 指南](docs/robottt.md)；MAC/MAG/MAL、共享动量更新
 
 AQMem / T²Mem 的观测时钟与读写协议见 [观测记忆指南](docs/observation-memory.md)；完整 episode、交替优化和 Accelerate 单卡/多卡入口见 [训练指南](docs/episode-parallel-training.md)。[真实 GPU 验收](docs/experiments/2026-10-12-bptt-resource-validation.md)已覆盖单卡训练与恢复，多卡 CUDA/NCCL 尚待目标服务器验证。
 
+新机器部署从 [跨机器训练快速开始](docs/portable-training.md) 入手：填写 [绝对路径配置模板](configs/machine.example.toml)，统一模型、数据、缓存及输出位置，然后进行检查、启动或恢复。
+
 本项目依赖 LeRobot，但不隶属于 Hugging Face、Evo-1 作者或其关联机构。仓库包含从 LeRobot 0.6.1 一次性迁入的 Evo-1 专属源码，保留原始许可证和版权头；不包含模型权重或数据集。
 
 ## 环境与安装
