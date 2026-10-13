@@ -6,6 +6,11 @@
 
 ## 并行和损失语义
 
+本协议使用 `HuggingFaceVLA/libero`，固定 revision 为
+`86958911c0f959db2bbbdb107eb3e17c5f9c798e`。当前不支持将 `lerobot/libero` 作为替代源，
+其导出可能缺少 episode 级 `tasks` 字段。正确下载命令及误下载后的处理见
+[跨机器训练快速开始](portable-training.md)。
+
 每次外层更新统一均匀抽取一个 task，再在该 task 内有放回均匀抽取 4 条完整 episode。按全局 slot 分配给各 rank，各自从当前 W0 初始化独立 fast state。默认每卡 microbatch 为 1 条 episode；1/2/4 卡分别在每卡累积 4/2/1 条 episode。全局 batch 必须整除进程数，不自动增大 batch 或学习率。
 
 每个动作 chunk 对有效动作元素求均值，再按整条 episode 的监督决策数平均，最后按全局 episode 数平均。长短 episode 具有相同权重。TBPTT=8 个观测事件，每 E/2=5 个环境步写入一次、每 E=10 步计算动作监督；H=50。中点删除动作输入、不采样动作噪声。跨段仅 detach fast state，slow weights 在完整有效 batch 完成前不更新。

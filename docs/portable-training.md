@@ -3,6 +3,11 @@
 适用于 LIBERO 的 T²Mem / AQMem / MAC / MAG / MAL episode-parallel 训练。
 每台机器只改 `configs/machine.local.toml` 中的路径，所有机器使用同一代码版本和 recipe。
 
+**当前 episode-parallel 训练协议仅支持 `HuggingFaceVLA/libero` 的下述固定版本。
+`lerobot/libero` 是另一个仓库，不是可直接替换的下载源。** 两个导出的存储和元数据结构可能不同；
+已确认目标机器的 `lerobot/libero` video-backed 导出缺少本入口需要的 episode 级 `tasks`。
+不通过猜测任务标签或改写元数据来绕过这一差异，以保持与共同 Stage1 和 baseline 的数据协议一致。
+
 ## 1. 安装并准备资源
 
 检出团队约定的 Git commit/tag，在仓库根目录执行：
@@ -33,6 +38,31 @@ uv run --frozen python -c 'import torch; print(torch.__version__, torch.version.
 模板全部使用绝对路径示例，替换为目标机器的实际路径。
 复制 HF snapshot 时必须保留可用的 blobs 链接，或者复制链接所指的真实文件。
 数据集不能使用早期 smoke 的部分下载；资源目录在训练期间保持只读，不在其中放日志。
+
+从正确仓库完整下载（在目标机器执行，按需修改绝对路径；下载时不要设置离线模式）：
+
+```bash
+HF_HUB_OFFLINE=0 TRANSFORMERS_OFFLINE=0 uv run --frozen hf download HuggingFaceVLA/libero \
+  --repo-type dataset \
+  --revision 86958911c0f959db2bbbdb107eb3e17c5f9c798e \
+  --local-dir /home/hello/lizk/datasets/HuggingFaceVLA-libero
+```
+
+先查看下载清单和体积时，在同一命令末尾加 `--dry-run`；确认后去掉它执行下载。
+请使用一个专用于该仓库的新目录，不要覆盖已有 `lerobot/libero` 目录，以免残留文件混入。
+然后更新 `configs/machine.local.toml` 的对应字段：
+
+```toml
+[assets]
+libero_dataset = "/home/hello/lizk/datasets/HuggingFaceVLA-libero"
+```
+
+这只是字段示例，保留本机配置中其他模型和存储字段。
+入口默认的 `--dataset-repo` 和 `--revision` 已对应上面的仓库和版本，不要改成 `lerobot/libero`。
+这两个参数记录所声明的来源；它们不会把本地目录中的另一份数据自动替换为正确版本。
+
+若此前因 `KeyError: 'tasks'` 失败，换成正确数据目录后重新执行两步检查，
+并使用新名称，例如 `--run-name t2mem-seed1000-smoke-v2`。该初始化失败的运行不能用于 `--resume`。
 
 ## 2. 检查配置
 

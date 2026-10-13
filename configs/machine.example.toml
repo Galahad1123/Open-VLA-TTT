@@ -3,7 +3,9 @@
 [assets]
 initial_checkpoint = "/srv/models/libero-stage1-5k/pretrained_model"
 vlm = "/srv/models/InternVL3-1B-hf"
-libero_dataset = "/srv/datasets/libero"
+# Only HuggingFaceVLA/libero @ 86958911c0f959db2bbbdb107eb3e17c5f9c798e.
+# lerobot/libero is a different, unsupported export for this training recipe.
+libero_dataset = "/srv/datasets/HuggingFaceVLA-libero"
 
 [storage]
 # Each --run-name gets run.json, metrics.jsonl, logs/rank-N.log and step-N/ here.
