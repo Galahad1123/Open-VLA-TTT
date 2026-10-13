@@ -241,17 +241,23 @@ def test_cli_real_checkpoint_processors_and_resume(monkeypatch, tmp_path, benchm
             }
         )
     )
+    machine = tmp_path / "initial-machine.toml"
+    checkpoint_key = (
+        "robomme_initial_checkpoint" if benchmark == "robomme" else "initial_checkpoint"
+    )
+    machine.write_text(
+        f'[assets]\n{benchmark}_dataset="{dataset}"\n{checkpoint_key}="{checkpoint}"\n'
+        f'[storage]\nruns_root="{tmp_path}"\n'
+    )
     main(
         [
             "--cpu",
             "--benchmark",
             benchmark,
-            "--checkpoint",
-            str(checkpoint),
-            "--dataset-root",
-            str(dataset),
-            "--output",
-            str(tmp_path / "first"),
+            "--machine",
+            str(machine),
+            "--run-name",
+            "first",
             "--recipe",
             str(recipe_path),
             "--memory-config",
@@ -324,14 +330,14 @@ def test_cli_real_checkpoint_processors_and_resume(monkeypatch, tmp_path, benchm
     shutil.move(vlm, moved_vlm)
     moved_checkpoint = tmp_path / "relocated/checkpoint"
     shutil.move(tmp_path / "first/step-00000001", moved_checkpoint)
+    machine = tmp_path / "resume-machine.toml"
+    machine.write_text(f'[assets]\n{benchmark}_dataset="{moved_dataset}"\nvlm="{moved_vlm}"\n')
     resume_args = [
+        "--machine",
+        str(machine),
         "--cpu",
         "--resume",
         str(moved_checkpoint),
-        "--dataset-root",
-        str(moved_dataset),
-        "--vlm-path",
-        str(moved_vlm),
     ]
     (moved_vlm / "model.safetensors").write_bytes(b"wrong resource")
     with pytest.raises(SystemExit) as rejected:

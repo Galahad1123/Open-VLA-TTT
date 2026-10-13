@@ -1,11 +1,15 @@
 # Copy to configs/machine.local.toml and replace these ABSOLUTE example paths.
 # This file only describes the machine; training hyperparameters stay in recipe JSON.
 [assets]
+# LIBERO initialization checkpoint (legacy field name retained).
 initial_checkpoint = "/srv/models/libero-stage1-5k/pretrained_model"
+robomme_initial_checkpoint = "/srv/models/robomme-stage1-5k/pretrained_model"
 vlm = "/srv/models/InternVL3-1B-hf"
 # Only HuggingFaceVLA/libero @ 86958911c0f959db2bbbdb107eb3e17c5f9c798e.
 # lerobot/libero is a different, unsupported export for this training recipe.
 libero_dataset = "/srv/datasets/HuggingFaceVLA-libero"
+# lerobot/robomme @ 92796abbc67db4ea6447e5031d04bf47aa3770bb (full dataset).
+robomme_dataset = "/srv/datasets/robomme"
 
 [storage]
 # Each --run-name gets run.json, metrics.jsonl, logs/rank-N.log and step-N/ here.

@@ -1,9 +1,9 @@
 # 跨机器训练快速开始
 
-适用于 LIBERO 的 T²Mem / AQMem / MAC / MAG / MAL episode-parallel 训练。
+适用于 LIBERO 的 T²Mem / AQMem / MAC / MAG / MAL，以及 RoboMME 的 T²Mem episode-parallel 训练。
 每台机器只改 `configs/machine.local.toml` 中的路径，所有机器使用同一代码版本和 recipe。
 
-**当前 episode-parallel 训练协议仅支持 `HuggingFaceVLA/libero` 的下述固定版本。
+**当前 LIBERO episode-parallel 训练协议仅支持 `HuggingFaceVLA/libero` 的下述固定版本。
 `lerobot/libero` 是另一个仓库，不是可直接替换的下载源。** 两个导出的存储和元数据结构可能不同；
 已确认目标机器的 `lerobot/libero` video-backed 导出缺少本入口需要的 episode 级 `tasks`。
 不通过猜测任务标签或改写元数据来绕过这一差异，以保持与共同 Stage1 和 baseline 的数据协议一致。
@@ -110,7 +110,9 @@ uv run --frozen python -c 'import torch; print(torch.__version__, torch.version.
 
 | 配置字段 | 内容 |
 | --- | --- |
-| `assets.initial_checkpoint` | 共同 Stage1 5k 的 `pretrained_model/`，包含权重、config、全部 processor/归一化文件及 `train_config.json` |
+| `assets.initial_checkpoint` | LIBERO 共同 Stage1 5k 的 `pretrained_model/`，包含权重、config、全部 processor/归一化文件及 `train_config.json` |
+| `assets.robomme_initial_checkpoint` | RoboMME Stage1 的 `pretrained_model/`，需单独复制，不可使用 LIBERO 检查点 |
+| `assets.robomme_dataset` | 完整 `lerobot/robomme`，revision `92796abbc67db4ea6447e5031d04bf47aa3770bb`，保留 demo 和执行帧 |
 | `assets.vlm` | 完整 `OpenGVLab/InternVL3-1B-hf` 快照，revision `014c0583a0d4bedf29fbe2dbff4f865eb998e171`，包括 tokenizer、配置和权重 |
 | `assets.libero_dataset` | 完整 `HuggingFaceVLA/libero`，revision `86958911c0f959db2bbbdb107eb3e17c5f9c798e`，包含 `meta/` 和全部数据分片 |
 | `storage.runs_root` | 可写的训练产物根目录 |
@@ -176,6 +178,51 @@ vlm = "/home/hello/models/InternVL3-1B-hf"
 
 若此前因 `KeyError: 'tasks'` 失败，换成正确数据目录后重新执行两步检查，
 并使用新名称，例如 `--run-name t2mem-seed1000-smoke-v2`。该初始化失败的运行不能用于 `--resume`。
+
+### RoboMME 数据下载与机器配置
+
+使用上文安装的 `hf` 工具，在目标机器完整下载固定版本：
+
+```bash
+export HF_ENDPOINT=https://hf-mirror.com
+unset HF_HUB_OFFLINE TRANSFORMERS_OFFLINE
+hf download lerobot/robomme \
+  --repo-type dataset \
+  --revision 92796abbc67db4ea6447e5031d04bf47aa3770bb \
+  --local-dir ~/datasets/robomme
+```
+
+本机核验的格式为 LeRobot v3.0，1600 episodes、768897 帧、10 FPS。
+不要删除 demo 帧或使用 smoke 子集。RoboMME 的来源是 `lerobot/robomme`，
+与 LIBERO 使用 `HuggingFaceVLA/libero` 的约定不同。
+
+将以下字段加入现有 `configs/machine.local.toml` 的 `[assets]` 段，勿重复创建该段：
+
+```toml
+robomme_dataset = "/home/hello/datasets/robomme"
+robomme_initial_checkpoint = "/home/hello/models/robomme-stage1-5k/pretrained_model"
+```
+
+路径按本机修改。RoboMME Stage1 检查点需单独复制，必须与 RoboMME 的 8 维动作匹配；
+共享的 `assets.vlm` 指向上文下载的 InternVL 模型。
+`--benchmark robomme` 自动选择这两个字段，LIBERO 继续使用 `libero_dataset` 和 `initial_checkpoint`。
+显式 `--dataset-root`、`--checkpoint` 优先；RoboMME 缺少配置时不会回退到 LIBERO 资源。
+输出、日志和 HF 缓存仍使用同一 `[storage]` 约定。
+
+在仓库根目录做配置检查（方法二、三安装的环境使用 `--no-sync` 替换 `--frozen`）：
+
+```bash
+CUDA_VISIBLE_DEVICES=0 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+uv run --frozen python -m lerobot_policy_vla_ttt.training.train_episode_parallel \
+  --machine configs/machine.local.toml --run-name robomme-t2mem-seed1000-check \
+  --benchmark robomme --architecture t2mem \
+  --recipe configs/training/robomme-t2mem-episode.json --dry-run
+```
+
+将 `--dry-run` 改为 `--stop-after 2` 并使用新的 run name 做两步检查；
+正式训练去掉两者并另取 run name。恢复时用 `--resume /绝对路径/step-XXXXXXXX`
+替代初始化检查点，仍使用新的 run name；入口从检查点恢复 benchmark，按当前机器配置定位数据和 VLM。
+详细协议与验证范围见 [RoboMME 训练记录](experiments/2026-10-13-robomme-observation-memory-training.md)。
 
 ## 2. 检查配置
 

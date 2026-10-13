@@ -133,3 +133,28 @@ def test_rank_log_keeps_python_native_output_and_exception(tmp_path):
     with pytest.raises(FileExistsError):
         with rank_log(tmp_path / "rank.log"):
             pass
+
+
+@pytest.mark.parametrize("override", [False, True])
+def test_robomme_machine_uses_own_assets(tmp_path, override):
+    config = tmp_path / "machine.toml"
+    config.write_text(
+        '[assets]\ninitial_checkpoint="libero-model"\nlibero_dataset="libero"\n'
+        'robomme_initial_checkpoint="robomme-model"\nrobomme_dataset="robomme"\n'
+    )
+    args = arguments(machine=config, benchmark="robomme")
+    if override:
+        args.checkpoint = tmp_path / "explicit-model"
+        args.dataset_root = tmp_path / "explicit-data"
+    portability.resolve_machine(args)
+    assert args.checkpoint == tmp_path / ("explicit-model" if override else "robomme-model")
+    assert args.dataset_root == tmp_path / ("explicit-data" if override else "robomme")
+
+
+def test_robomme_does_not_fall_back_to_libero_assets(tmp_path):
+    config = tmp_path / "machine.toml"
+    config.write_text('[assets]\ninitial_checkpoint="libero-model"\nlibero_dataset="libero"\n')
+    args = arguments(machine=config, benchmark="robomme")
+    portability.resolve_machine(args)
+    assert args.checkpoint is None
+    assert args.dataset_root is None
