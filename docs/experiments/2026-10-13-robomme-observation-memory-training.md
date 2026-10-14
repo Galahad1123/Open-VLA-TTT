@@ -85,14 +85,12 @@ RoboMME 记忆版闭环评测的 demo 注入尚未在本次接入；不能直接
 
 集成 master 的机器配置、VLM 路径覆盖、内容哈希 identity v2 及运行目录日志管理。新训练生成可迁移 checkpoint；原有路径绑定 checkpoint 继续沿用原恢复协议，不会自动升级成可迁移身份。
 
-机器配置示例中的 `assets.libero_dataset` 专用于 LIBERO。RoboMME 请显式传入 `--dataset-root` 和对应 Stage1 `--checkpoint`，它们优先于机器配置；VLM 路径可通过 `assets.vlm` 或 `--vlm-path` 指定。例如在目标机器仓库根目录：
+机器配置中的 `assets.libero_dataset` 和 `assets.initial_checkpoint` 专用于 LIBERO。RoboMME 使用 `assets.robomme_dataset` 和 `assets.robomme_initial_checkpoint`；显式 `--dataset-root` 和 `--checkpoint` 仍优先于机器配置。VLM 路径通过共享的 `assets.vlm` 或 `--vlm-path` 指定。下载与配置步骤见 [跨机器训练文档](../portable-training.md)。例如在目标机器仓库根目录：
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m lerobot_policy_vla_ttt.training.train_episode_parallel \
   --machine configs/machine.local.toml --run-name robomme-t2mem \
   --benchmark robomme --architecture t2mem \
-  --checkpoint /srv/models/robomme-stage1-5k/pretrained_model \
-  --dataset-root /srv/datasets/robomme \
   --recipe configs/training/robomme-t2mem-episode.json --dry-run
 ```
 

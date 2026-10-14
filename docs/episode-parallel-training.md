@@ -168,5 +168,6 @@ B ≤ task 数时任务不重复；B > task 数时各 task 计数相差至多 1�
 日志新增全局 `global_task_count` / `global_task_counts` 和 `optimizer_groups`。
 联合 checkpoint 保存一组 joint optimizer；原交替 checkpoint 仍保存两组 optimizer。
 
-本轮验证范围为 CPU tiny 模型与 Gloo，真实权重只做 metadata dry-run；没有启动此 recipe
-的真实 GPU 训练，也没有多 GPU CUDA/NCCL 显存、吞吐或数值验收。
+后续真实 Stage2 20k 单 GPU 短测已完成 8 步：峰值 allocated/reserved 为 19.46/21.19 GiB，
+本机 RTX PRO 5000 72GB 的 2000 步耗时估计约 63 小时，详见 recipe 文档。
+CPU/Gloo 精确恢复与跨机器资源重定位测试通过；多 GPU CUDA/NCCL 仍未验收。

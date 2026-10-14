@@ -8,7 +8,13 @@ import tomllib
 from pathlib import Path
 
 MACHINE_FIELDS = {
-    "assets": {"initial_checkpoint", "vlm", "libero_dataset"},
+    "assets": {
+        "initial_checkpoint",
+        "vlm",
+        "libero_dataset",
+        "robomme_initial_checkpoint",
+        "robomme_dataset",
+    },
     "storage": {"runs_root", "hf_home"},
 }
 
@@ -40,9 +46,12 @@ def resolve_machine(args):
     """CLI paths are relative to cwd; TOML paths are relative to the TOML file."""
     machine = read_machine(args.machine)
     assets, storage = machine.get("assets", {}), machine.get("storage", {})
-    defaults = {"dataset_root": assets.get("libero_dataset"), "vlm_path": assets.get("vlm")}
+    benchmark = getattr(args, "benchmark", None) or "libero"
+    defaults = {"dataset_root": assets.get(f"{benchmark}_dataset"), "vlm_path": assets.get("vlm")}
     if not args.resume:
-        defaults["checkpoint"] = assets.get("initial_checkpoint")
+        defaults["checkpoint"] = assets.get(
+            "robomme_initial_checkpoint" if benchmark == "robomme" else "initial_checkpoint"
+        )
     for name, default in defaults.items():
         if getattr(args, name) is None and default is not None:
             setattr(args, name, Path(default))

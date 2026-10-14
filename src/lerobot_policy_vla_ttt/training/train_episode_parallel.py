@@ -15,7 +15,14 @@ from pathlib import Path
 from lerobot.configs.policies import PreTrainedConfig
 
 from ..models.evo1_groot.configuration_evo1_groot import Evo1GrootConfig
-from ..portability import configure_cache, content_digest, local_vlm, relocate_vlm, resolve_machine
+from ..portability import (
+    configure_cache,
+    content_digest,
+    local_vlm,
+    read_machine,
+    relocate_vlm,
+    resolve_machine,
+)
 from .episode_parallel.checkpoint import canonical, normalize_saved_recipe
 from .episode_parallel.config import Recipe
 from .train_robottt import ARCHITECTURES
@@ -127,10 +134,25 @@ def main(argv=None):
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
     try:
-        machine = resolve_machine(args)
+        machine = read_machine(args.machine)
         configure_cache(
             machine, __spec__.name if __spec__ else __name__, sys.argv[1:] if argv is None else argv
         )
+        resume_state = None
+        if args.resume:
+            args.resume = args.resume.expanduser().resolve()
+            import torch
+
+            if not (args.resume / "COMPLETE").is_file():
+                raise ValueError("Incomplete resume checkpoint")
+            resume_state = torch.load(
+                args.resume / "training.pt", map_location="cpu", weights_only=False
+            )
+        old_identity = resume_state["identity"] if resume_state else {}
+        protocol = old_identity.get("sequence_protocol", {})
+        benchmark = args.benchmark or protocol.get("benchmark", "libero")
+        args.benchmark = benchmark
+        machine = resolve_machine(args)
         if not (args.checkpoint or args.resume) or args.dataset_root is None or args.output is None:
             raise ValueError(
                 "Provide checkpoint/resume, dataset-root and output via CLI or --machine"
@@ -139,15 +161,6 @@ def main(argv=None):
             raise ValueError("Use a new output directory")
         if args.stop_after is not None and args.stop_after < 1:
             raise ValueError("stop-after must be positive")
-        resume_state = None
-        if args.resume:
-            import torch
-
-            if not (args.resume / "COMPLETE").is_file():
-                raise ValueError("Incomplete resume checkpoint")
-            resume_state = torch.load(
-                args.resume / "training.pt", map_location="cpu", weights_only=False
-            )
         checkpoint = args.checkpoint or (args.resume / "pretrained_model")
         source = PreTrainedConfig.from_pretrained(checkpoint, local_files_only=True)
         source = relocate_vlm(source, args.vlm_path)
@@ -157,9 +170,6 @@ def main(argv=None):
         architecture = args.architecture or (source.type if source.type in KINDS else "t2mem")
         from ..baselines.prepare import ROBOMME_REVISION
 
-        old_identity = resume_state["identity"] if resume_state else {}
-        protocol = old_identity.get("sequence_protocol", {})
-        benchmark = args.benchmark or protocol.get("benchmark", "libero")
         old_dataset = old_identity.get("dataset", {})
         args.dataset_repo = (
             args.dataset_repo
