@@ -6,6 +6,12 @@ import torch
 
 
 def parameter_groups(policy, phase, recipe):
+    if phase == "joint":
+        groups = parameter_groups(policy, "memory", recipe) + parameter_groups(
+            policy, "policy", recipe
+        )
+        policy.model.set_phase("joint")
+        return groups
     policy.model.set_phase(f"{phase}_only")
     grouped = {}
     for name, p in policy.named_parameters():
@@ -44,14 +50,12 @@ class PhaseOptimizers:
             phase: torch.optim.AdamW(
                 parameter_groups(policy, phase, recipe), betas=(0.9, 0.999), eps=1e-8
             )
-            for phase in ("memory", "policy")
+            for phase in (("joint",) if recipe.training_mode == "joint" else ("memory", "policy"))
         }
-        a, b = (
-            {id(p) for g in o.param_groups for p in g["params"]} for o in self.optimizers.values()
-        )
-        if a & b:
+        ids = [id(p) for o in self.optimizers.values() for g in o.param_groups for p in g["params"]]
+        if len(ids) != len(set(ids)):
             raise ValueError("Phase parameter groups overlap")
-        self.counts = {"memory": 0, "policy": 0}
+        self.counts = dict.fromkeys(self.optimizers, 0)
         self.active = None
 
     def begin(self, step):
@@ -59,7 +63,7 @@ class PhaseOptimizers:
             raise ValueError("Outer step differs from optimizer counters or budget")
         self.active = self.recipe.phase(step)
         self.policy.train()
-        self.policy.model.set_phase(f"{self.active}_only")
+        self.policy.model.set_phase("joint" if self.active == "joint" else f"{self.active}_only")
         for optimizer in self.optimizers.values():
             optimizer.zero_grad(set_to_none=True)
         update = self.counts[self.active] + 1

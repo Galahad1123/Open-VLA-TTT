@@ -79,3 +79,46 @@ def test_recipe_rejects_invalid_sizes_and_counts_phase_updates():
     ]
     assert r.phase_budget("memory") == 4
     assert r.phase_budget("policy") == 3
+
+
+@pytest.mark.parametrize("field,value", [("training_mode", "bad"), ("sampling_mode", "bad")])
+def test_recipe_rejects_unknown_modes(field, value):
+    with pytest.raises(ValueError, match=field):
+        Recipe(**{field: value})
+
+
+def test_joint_phase_budget():
+    recipe = Recipe(steps=7, training_mode="joint", sampling_mode="mixed_tasks")
+    assert [recipe.phase(i) for i in range(7)] == ["joint"] * 7
+    assert recipe.phase_budget("joint") == 7
+    assert recipe.phase_budget("memory") == 0
+
+
+@pytest.mark.parametrize("batch_size", [1, 4, 5, 8, 12])
+def test_mixed_sampler_balances_tasks_and_replays_global_slots(batch_size):
+    from collections import Counter
+
+    from lerobot_policy_vla_ttt.training.episode_parallel.data import MixedTaskEpisodeSampler
+
+    episodes = [Episode(i, str(i % 5), i * 100, i * 100 + i + 1) for i in range(13)]
+    by_id = {ep.index: ep for ep in episodes}
+    sampler = MixedTaskEpisodeSampler(episodes, seed=10, global_batch_size=batch_size)
+    longer = [Episode(ep.index, ep.task, ep.start, ep.end + 1000) for ep in episodes]
+    replay = MixedTaskEpisodeSampler(longer, seed=10, global_batch_size=batch_size)
+    seen = set()
+    for step in range(30):
+        samples = sampler.batch(step)
+        assert samples == replay.batch(step)
+        counts = Counter(by_id[s.episode_id].task for s in samples)
+        assert len(counts) == min(batch_size, 5)
+        assert max(counts.values()) - min(counts.values()) <= 1
+        assert len({s.seed for s in samples}) == batch_size
+        seen.update(counts)
+        for world in (1, 2, 4):
+            if batch_size % world == 0:
+                shards = [
+                    s for rank in range(world) for s in sampler.local_batch(step, rank, world)
+                ]
+                assert sorted(shards, key=lambda s: s.slot) == samples
+    assert len(seen) == 5
+    assert sampler.batch(0) != sampler.batch(1)

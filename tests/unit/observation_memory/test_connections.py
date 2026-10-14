@@ -115,3 +115,38 @@ def test_aqmem_queries_attention_output_before_residual(monkeypatch):
     torch.testing.assert_close(
         output, tokens + captured["attention"] + head.action_gates[0].tanh() * 2
     )
+
+
+def test_aqmem_zero_gate_preserves_baseline_after_adaptive_writes():
+    from torch.nn.attention import SDPBackend, sdpa_kernel
+
+    torch.manual_seed(2)
+    cfg = config(AQMemConfig, memory_gate_init=0.0, memory_update_rule="t2mem_adaptive")
+    head, base = AQMemActionHead(cfg).eval(), GrootActionHead(cfg).eval()
+    head.initialize_from_baseline(base)
+    context, state = torch.randn(2, 5, 16), torch.randn(2, 4)
+    mask = torch.tensor([[1, 1, 1, 0, 0]] * 2).bool()
+    features = tuple(torch.randn_like(context) for _ in head.interfaces)
+    memory = None
+    for _ in range(3):
+        memory = head.commit(head.prepare_observation(features, mask, memory))
+    cache = head.prepare_observation(features, mask, memory)
+    assert head.config.memory_enabled
+    assert all(s.update_count.tolist() == [3, 3] for s in cache.memory)
+    actions, time = torch.randn(2, 3, 4), torch.rand(2)
+    ids = torch.zeros(2, dtype=torch.long)
+    with sdpa_kernel(SDPBackend.MATH):
+        expected = base.velocity(
+            context, state, actions, time, context_mask=mask, embodiment_id=ids
+        )
+        actual = head.velocity_with_memory(
+            context, state, actions, time, cache, context_mask=mask, embodiment_id=ids
+        )
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+        actual.square().mean().backward()
+        assert any(g.grad is not None and g.grad.abs().sum() > 0 for g in head.action_gates)
+        torch.manual_seed(8)
+        expected_actions = base.get_action(context, state, context_mask=mask)
+        torch.manual_seed(8)
+        actual_actions = head.sample(context, state, cache, context_mask=mask)
+        torch.testing.assert_close(actual_actions.flatten(1), expected_actions, rtol=0, atol=0)

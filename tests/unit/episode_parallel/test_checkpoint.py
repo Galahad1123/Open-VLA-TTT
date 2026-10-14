@@ -16,7 +16,8 @@ from .test_engine import make_policy
 
 def assert_control_equal(actual, expected):
     assert actual["counts"] == expected["counts"]
-    for phase in ("memory", "policy"):
+    assert actual["optimizers"].keys() == expected["optimizers"].keys()
+    for phase in actual["optimizers"]:
         a, b = actual["optimizers"][phase], expected["optimizers"][phase]
         assert a["param_groups"] == b["param_groups"]
         torch.testing.assert_close(a["state"], b["state"], atol=0, rtol=0)
@@ -38,8 +39,11 @@ def source():
     )
 
 
+@pytest.mark.parametrize("joint", [False, True])
 @pytest.mark.parametrize("split_step", [1, 2, 3])
-def test_resume_matches_uninterrupted_across_phase_boundary(monkeypatch, tmp_path, split_step):
+def test_resume_matches_uninterrupted_across_phase_boundary(
+    monkeypatch, tmp_path, split_step, joint
+):
     accelerator = Accelerator(cpu=True, mixed_precision="no")
     r = Recipe(
         steps=4,
@@ -50,12 +54,14 @@ def test_resume_matches_uninterrupted_across_phase_boundary(monkeypatch, tmp_pat
         global_batch_size=2,
         tbptt_events=3,
         save_every=2,
+        training_mode="joint" if joint else "alternating",
+        sampling_mode="mixed_tasks" if joint else "same_task",
     )
     torch.manual_seed(12)
-    whole = make_policy("t2mem", monkeypatch)
+    whole = make_policy("aqmem" if joint else "t2mem", monkeypatch)
     expected = run(
         whole,
-        source(),
+        mixed_source() if joint else source(),
         None,
         None,
         recipe=r,
@@ -64,10 +70,10 @@ def test_resume_matches_uninterrupted_across_phase_boundary(monkeypatch, tmp_pat
         identity={"dataset": "fixture"},
     )
     torch.manual_seed(12)
-    split = make_policy("t2mem", monkeypatch)
+    split = make_policy("aqmem" if joint else "t2mem", monkeypatch)
     run(
         split,
-        source(),
+        mixed_source() if joint else source(),
         None,
         None,
         recipe=r,
@@ -78,10 +84,10 @@ def test_resume_matches_uninterrupted_across_phase_boundary(monkeypatch, tmp_pat
     )
     checkpoint = tmp_path / f"split/step-{split_step:08d}"
     torch.manual_seed(999)
-    restored = make_policy("t2mem", monkeypatch)
+    restored = make_policy("aqmem" if joint else "t2mem", monkeypatch)
     actual = run(
         restored,
-        source(),
+        mixed_source() if joint else source(),
         None,
         None,
         recipe=r,
@@ -91,7 +97,11 @@ def test_resume_matches_uninterrupted_across_phase_boundary(monkeypatch, tmp_pat
         resume=checkpoint,
     )
     torch.testing.assert_close(whole.state_dict(), restored.state_dict(), atol=0, rtol=0)
-    assert actual["counts"] == expected["counts"] == {"memory": 2, "policy": 2}
+    assert (
+        actual["counts"]
+        == expected["counts"]
+        == ({"joint": 4} if joint else {"memory": 2, "policy": 2})
+    )
     assert actual["totals"] == expected["totals"]
     manifest = json.loads((tmp_path / "resumed/run.json").read_text())
     assert manifest["world_size"] == 1 and manifest["recipe"]["global_batch_size"] == 2
@@ -101,8 +111,40 @@ def test_resume_matches_uninterrupted_across_phase_boundary(monkeypatch, tmp_pat
     assert_control_equal(final_whole["control"], final_restored["control"])
     saved = torch.load(checkpoint / "training.pt", weights_only=False)
     if split_step >= 2:
-        assert all(saved["control"]["optimizers"][phase]["state"] for phase in ("memory", "policy"))
+        assert all(
+            saved["control"]["optimizers"][phase]["state"]
+            for phase in saved["control"]["optimizers"]
+        )
+    whole_metrics = [
+        json.loads(line) for line in (tmp_path / "whole/metrics.jsonl").read_text().splitlines()
+    ]
+    resumed_metrics = [
+        json.loads(line) for line in (tmp_path / "resumed/metrics.jsonl").read_text().splitlines()
+    ]
+    for expected_row, actual_row in zip(whole_metrics[split_step:], resumed_metrics, strict=True):
+        for key in (
+            "loss",
+            "global_task_count",
+            "global_task_counts",
+            "optimizer_groups",
+            "totals",
+        ):
+            assert expected_row[key] == actual_row[key]
+        assert actual_row["global_task_count"] == (2 if joint else 1)
     control = PhaseOptimizers(restored, r)
+    for field, value in (
+        ("training_mode", "alternating" if joint else "joint"),
+        ("sampling_mode", "same_task" if joint else "mixed_tasks"),
+    ):
+        with pytest.raises(RuntimeError, match="recipe"):
+            load_checkpoint(
+                checkpoint,
+                restored,
+                control,
+                accelerator,
+                recipe=replace(r, **{field: value}),
+                identity={"dataset": "fixture"},
+            )
     with pytest.raises(RuntimeError, match="identity"):
         load_checkpoint(
             checkpoint, restored, control, accelerator, recipe=r, identity={"dataset": "other"}
@@ -133,3 +175,42 @@ def test_resume_matches_uninterrupted_across_phase_boundary(monkeypatch, tmp_pat
         load_checkpoint(
             checkpoint, restored, control, accelerator, recipe=r, identity={"dataset": "fixture"}
         )
+
+
+def mixed_source():
+    data = source()
+    frames = [dict(frame, task="move" if i < 3 else "lift") for i, frame in enumerate(data.dataset)]
+    return EpisodeSource(
+        frames, [Episode(0, "move", 0, 3), Episode(1, "lift", 3, 10)], execution=2, horizon=3
+    )
+
+
+def test_legacy_recipe_missing_only_new_keys_restores(monkeypatch, tmp_path):
+    accelerator = Accelerator(cpu=True, mixed_precision="no")
+    recipe = Recipe(steps=2, phase_length=1, global_batch_size=1, horizon=3, execution=2)
+    torch.manual_seed(12)
+    policy = make_policy("aqmem", monkeypatch)
+    run(
+        policy,
+        source(),
+        None,
+        None,
+        recipe=recipe,
+        accelerator=accelerator,
+        output=tmp_path / "first",
+        identity={},
+        stop_after=1,
+    )
+    path = tmp_path / "first/step-00000001"
+    saved = torch.load(path / "training.pt", weights_only=False)
+    for key in ("training_mode", "sampling_mode"):
+        del saved["recipe"][key]
+    torch.save(saved, path / "training.pt")
+    control = PhaseOptimizers(policy, recipe)
+    step, _ = load_checkpoint(path, policy, control, accelerator, recipe=recipe, identity={})
+    assert step == 1
+    assert_control_equal(control.state_dict(), saved["control"])
+    del saved["recipe"]["seed"]
+    torch.save(saved, path / "training.pt")
+    with pytest.raises(RuntimeError, match="recipe"):
+        load_checkpoint(path, policy, control, accelerator, recipe=recipe, identity={})

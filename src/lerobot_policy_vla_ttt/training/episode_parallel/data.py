@@ -72,6 +72,30 @@ class EpisodeSampler:
         return self.batch(step)[rank::world_size]
 
 
+class MixedTaskEpisodeSampler(EpisodeSampler):
+    """Task-balanced global batches, then uniform episodes within each task.
+
+    Every complete cycle covers all tasks once; the final partial cycle is
+    sampled without replacement. Episode duration never enters sampling.
+    """
+
+    def batch(self, step):
+        if step < 0:
+            raise ValueError("step must be nonnegative")
+        rng = random.Random(derive_seed(self.seed, "mixed_sampling", step))
+        tasks = []
+        while len(tasks) < self.global_batch_size:
+            cycle = list(self.tasks)
+            rng.shuffle(cycle)
+            tasks.extend(cycle[: self.global_batch_size - len(tasks)])
+        return [
+            Sample(
+                slot, rng.choice(self.tasks[task]), derive_seed(self.seed, "episode", step, slot)
+            )
+            for slot, task in enumerate(tasks)
+        ]
+
+
 def temporal_transform(image, transform, *, seed, camera):
     """Replay CPU transform RNG per camera without consuming the model RNG stream."""
     if image.device.type != "cpu":

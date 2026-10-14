@@ -2,6 +2,7 @@
 
 import json
 import time
+from collections import Counter
 from dataclasses import asdict
 from pathlib import Path
 
@@ -9,7 +10,7 @@ import torch
 import torch.distributed as dist
 
 from .checkpoint import canonical, load_checkpoint, model_contract, save_checkpoint
-from .data import EpisodeSampler
+from .data import EpisodeSampler, MixedTaskEpisodeSampler
 from .engine import backward_episode, episode_rng
 from .optim import PhaseOptimizers
 from .runtime import broadcast_model, collective_error, distributed, synchronize_gradients
@@ -40,7 +41,10 @@ def run(
             'Use Accelerator(mixed_precision="no", gradient_accumulation_steps=1); '
             "the policy owns BF16 autocast and the engine owns normalization"
         )
-    sampler = EpisodeSampler(
+    sampler_cls = (
+        MixedTaskEpisodeSampler if recipe.sampling_mode == "mixed_tasks" else EpisodeSampler
+    )
+    sampler = sampler_cls(
         source.episodes.values(), seed=recipe.seed, global_batch_size=recipe.global_batch_size
     )
     sampler.local_batch(0, accelerator.process_index, accelerator.num_processes)
@@ -87,9 +91,9 @@ def run(
         error = None
         try:
             phase = control.begin(step)
-            for sample in sampler.local_batch(
-                step, accelerator.process_index, accelerator.num_processes
-            ):
+            global_samples = sampler.batch(step)
+            task_counts = Counter(source.episodes[s.episode_id].task for s in global_samples)
+            for sample in global_samples[accelerator.process_index :: accelerator.num_processes]:
                 with episode_rng(sample.seed, accelerator.device):
                     metrics, memory = backward_episode(
                         policy,
@@ -125,6 +129,8 @@ def run(
             step=step,
             phase=phase,
             phase_updates=control.counts.copy(),
+            global_task_count=len(task_counts),
+            global_task_counts=dict(task_counts),
             grad_norm=grad_norm,
             totals=totals.copy(),
             update_seconds=time.monotonic() - started,
@@ -132,6 +138,10 @@ def run(
             learning_rates={
                 str(i): g["lr"] for i, g in enumerate(control.optimizers[phase].param_groups)
             },
+            optimizer_groups=[
+                {k: g[k] for k in ("category", "lr", "peak_lr", "weight_decay")}
+                for g in control.optimizers[phase].param_groups
+            ],
         )
         error = None
         if accelerator.is_main_process:

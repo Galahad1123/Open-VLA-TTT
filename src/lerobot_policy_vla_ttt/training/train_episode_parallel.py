@@ -16,7 +16,7 @@ from lerobot.configs.policies import PreTrainedConfig
 
 from ..models.evo1_groot.configuration_evo1_groot import Evo1GrootConfig
 from ..portability import configure_cache, content_digest, local_vlm, relocate_vlm, resolve_machine
-from .episode_parallel.checkpoint import canonical
+from .episode_parallel.checkpoint import canonical, normalize_saved_recipe
 from .episode_parallel.config import Recipe
 from .train_robottt import ARCHITECTURES
 
@@ -54,7 +54,7 @@ def resolve_config(source, architecture, recipe, *, device, overrides=None):
         finetune_language_model=True,
         finetune_vision_model=True,
         finetune_action_head=True,
-        memory_training="memory_only",
+        memory_training="joint" if recipe.training_mode == "joint" else "memory_only",
         memory_update_protocol="half_execution",
         n_action_steps=recipe.execution,
         enable_gradient_checkpointing=True,
@@ -267,7 +267,7 @@ def main(argv=None):
                 k: v for k, v in expected_identity["dataset"].items() if k != "content_sha256"
             }
         if resume_state and (
-            resume_state["recipe"] != dataclasses.asdict(recipe)
+            normalize_saved_recipe(resume_state["recipe"]) != dataclasses.asdict(recipe)
             or expected_identity != identity
             or resume_state["world_size"] != world
         ):

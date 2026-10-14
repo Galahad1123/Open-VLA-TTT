@@ -1,6 +1,8 @@
 """Small CPU/Gloo or explicit CUDA/NCCL probe; invoke with python or torchrun."""
 
 import argparse
+import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -8,7 +10,7 @@ import torch
 import torch.distributed as dist
 from accelerate import Accelerator
 
-from episode_parallel.test_checkpoint import assert_control_equal, source
+from episode_parallel.test_checkpoint import assert_control_equal, mixed_source, source
 from episode_parallel.test_engine import episode_events, make_policy
 from lerobot_policy_vla_ttt.training.episode_parallel.config import Recipe
 from lerobot_policy_vla_ttt.training.episode_parallel.engine import backward_episode, episode_rng
@@ -130,6 +132,90 @@ def main():
             map_location="cpu",
         )
         assert_control_equal(a["control"], b["control"])
+    # Joint AQMem through the production runner, with genuinely different tasks
+    # and episode lengths. Capture synchronized gradients at optimizer boundaries.
+    with pytest.MonkeyPatch.context() as patch:
+        recipe = replace(r, training_mode="joint", sampling_mode="mixed_tasks")
+        history = []
+        original_step = PhaseOptimizers.step
+
+        def capture_step(control):
+            history.append(
+                {
+                    n: p.grad.detach().cpu().clone()
+                    for n, p in control.policy.named_parameters()
+                    if p.grad is not None
+                }
+            )
+            return original_step(control)
+
+        patch.setattr(PhaseOptimizers, "step", capture_step)
+        torch.manual_seed(12)
+        whole = make_policy("aqmem", patch).to(accelerator.device)
+        expected = run(
+            whole,
+            mixed_source(),
+            None,
+            None,
+            recipe=recipe,
+            accelerator=accelerator,
+            output=args.output / "joint-whole",
+            identity={"dataset": "mixed-probe"},
+        )
+        whole_history = history[:]
+        history.clear()
+        torch.manual_seed(12)
+        split = make_policy("aqmem", patch).to(accelerator.device)
+        run(
+            split,
+            mixed_source(),
+            None,
+            None,
+            recipe=recipe,
+            accelerator=accelerator,
+            output=args.output / "joint-split",
+            identity={"dataset": "mixed-probe"},
+            stop_after=2,
+        )
+        torch.manual_seed(999)
+        restored = make_policy("aqmem", patch).to(accelerator.device)
+        actual = run(
+            restored,
+            mixed_source(),
+            None,
+            None,
+            recipe=recipe,
+            accelerator=accelerator,
+            output=args.output / "joint-resumed",
+            identity={"dataset": "mixed-probe"},
+            resume=args.output / "joint-split/step-00000002",
+        )
+        assert actual == expected
+        torch.testing.assert_close(whole.state_dict(), restored.state_dict(), atol=0, rtol=0)
+        torch.testing.assert_close(whole_history, history, atol=0, rtol=0)
+        saved = torch.load(
+            args.output / "joint-whole/step-00000004/training.pt",
+            weights_only=False,
+            map_location="cpu",
+        )
+        resumed = torch.load(
+            args.output / "joint-resumed/step-00000004/training.pt",
+            weights_only=False,
+            map_location="cpu",
+        )
+        assert_control_equal(saved["control"], resumed["control"])
+        rows = [
+            json.loads(line)
+            for line in (args.output / "joint-whole/metrics.jsonl").read_text().splitlines()
+        ]
+        assert all(row["global_task_counts"] == {"lift": 2, "move": 2} for row in rows)
+        result["aqmem_joint_mixed"] = {
+            "state": {k: v.cpu() for k, v in whole.state_dict().items()},
+            "grads": whole_history,
+            "losses": [row["loss"] for row in rows],
+            "control": saved["control"],
+            "totals": expected["totals"],
+        }
     # Locally absent gradient, globally absent parameter, and phase-safe ordering.
     dummy = torch.nn.ParameterList([torch.nn.Parameter(torch.ones(2)) for _ in range(3)])
     dummy.to(accelerator.device)

@@ -20,6 +20,11 @@ def canonical(value):
     return json.loads(json.dumps(value, default=str))
 
 
+def normalize_saved_recipe(values):
+    """Only the two newly introduced modes have implicit legacy defaults."""
+    return {"training_mode": "alternating", "sampling_mode": "same_task", **values}
+
+
 def model_contract(policy, *, portable=False):
     values = asdict(policy.config)
     for name in ("device", "memory_training", "pretrained_path"):
@@ -99,6 +104,7 @@ def load_checkpoint(path, policy, control, accelerator, *, recipe, identity):
         if not (path / "COMPLETE").is_file():
             raise ValueError("Incomplete checkpoint")
         state = torch.load(path / "training.pt", map_location="cpu", weights_only=False)
+        state["recipe"] = normalize_saved_recipe(state["recipe"])
         checks = {
             "format": 1,
             "world_size": accelerator.num_processes,

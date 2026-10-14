@@ -135,3 +135,75 @@ def test_episode_rng_isolated_and_repeatable():
     with episode_rng(10, torch.device("cpu")):
         b = torch.rand(4)
     assert torch.equal(a, b) and torch.equal(state, torch.get_rng_state())
+
+
+def test_aqmem_joint_updates_all_components_once(monkeypatch):
+    torch.manual_seed(12)
+    policy = make_policy("aqmem", monkeypatch)
+    recipe = Recipe(
+        steps=3,
+        warmup_steps=2,
+        global_batch_size=1,
+        horizon=3,
+        execution=2,
+        tbptt_events=4,
+        training_mode="joint",
+    )
+    control = PhaseOptimizers(policy, recipe)
+    assert set(control.optimizers) == {"joint"}
+    groups = control.optimizers["joint"].param_groups
+    ids = [id(p) for group in groups for p in group["params"]]
+    assert len(ids) == len(set(ids))
+    for step, factor in enumerate((0.5, 1.0, 0.1)):
+        assert control.begin(step) == "joint"
+        assert set(ids) == {id(p) for p in policy.parameters() if p.requires_grad}
+        before = {n: p.detach().clone() for n, p in policy.named_parameters()}
+        with episode_rng(25, torch.device("cpu")):
+            backward_episode(
+                policy,
+                episode_events(),
+                decisions=3,
+                recipe=recipe,
+                backward=lambda loss: loss.backward(),
+            )
+        for fragment in (
+            "vision_tower",
+            "language_model",
+            "multi_modal_projector",
+            "blocks.",
+            ".fast.",
+            ".update.rho",
+            "action_gates",
+        ):
+            candidates = [(n, p) for n, p in policy.named_parameters() if fragment in n]
+            assert candidates, fragment
+            assert any(p.grad is not None and p.grad.abs().sum() > 0 for _, p in candidates), (
+                fragment
+            )
+        control.step()
+        for fragment in (
+            "vision_tower",
+            "language_model",
+            "multi_modal_projector",
+            "blocks.",
+            ".fast.",
+            ".update.rho",
+            "action_gates",
+        ):
+            assert any(
+                not torch.equal(before[n], p) for n, p in policy.named_parameters() if fragment in n
+            ), fragment
+        assert control.counts == {"joint": step + 1}
+        for group in groups:
+            peak = (
+                recipe.policy_lr
+                if group["category"] in ("vlm", "action_expert")
+                else recipe.memory_lr
+            )
+            assert group["peak_lr"] == peak
+            assert group["lr"] == pytest.approx(peak * factor)
+            if group["category"] in ("w0", "inner_step"):
+                assert group["weight_decay"] == 0
+        assert all(
+            state["step"] == step + 1 for state in control.optimizers["joint"].state.values()
+        )

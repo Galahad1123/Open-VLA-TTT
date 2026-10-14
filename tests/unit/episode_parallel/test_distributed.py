@@ -29,13 +29,20 @@ def test_cpu_two_ranks_match_one_rank_for_all_variants(tmp_path):
             str(tmp_path / str(world)),
         ]
         result = subprocess.run(
-            command, env=env, cwd=root, capture_output=True, text=True, timeout=150
+            command, env=env, cwd=root, capture_output=True, text=True, timeout=240
         )
         assert result.returncode == 0, result.stdout + result.stderr
         for rank in range(world):
             log = (tmp_path / str(world) / f"logged/logs/rank-{rank}.log").read_text()
             assert f"rank {rank} ready" in log
     single = torch.load(tmp_path / "1/rank-0.pt", weights_only=True)
+    assert "aqmem_joint_mixed" in single
     ranks = [torch.load(tmp_path / f"2/rank-{r}.pt", weights_only=True) for r in range(2)]
+    # assert_close handles tensors/numbers, not group metadata strings.
+    groups = [
+        item["aqmem_joint_mixed"]["control"]["optimizers"]["joint"].pop("param_groups")
+        for item in (single, *ranks)
+    ]
+    assert groups[0] == groups[1] == groups[2]
     torch.testing.assert_close(ranks[0], ranks[1], atol=0, rtol=0)
     torch.testing.assert_close(single, ranks[0], atol=2e-6, rtol=2e-4)

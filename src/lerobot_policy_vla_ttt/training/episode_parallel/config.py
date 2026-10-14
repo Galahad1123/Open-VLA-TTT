@@ -22,8 +22,14 @@ class Recipe:
     policy_decay: float = 1e-3
     memory_decay: float = 1e-5
     minimum_lr_ratio: float = 0.1
+    training_mode: str = "alternating"
+    sampling_mode: str = "same_task"
 
     def __post_init__(self):
+        if self.training_mode not in ("alternating", "joint"):
+            raise ValueError("training_mode must be alternating or joint")
+        if self.sampling_mode not in ("same_task", "mixed_tasks"):
+            raise ValueError("sampling_mode must be same_task or mixed_tasks")
         for name in (
             "steps",
             "phase_length",
@@ -51,6 +57,8 @@ class Recipe:
 
     def phase(self, step):
         """Phase for the zero-based next outer update."""
+        if self.training_mode == "joint":
+            return "joint"
         return "memory" if (step // self.phase_length) % 2 == 0 else "policy"
 
     def phase_budget(self, phase):

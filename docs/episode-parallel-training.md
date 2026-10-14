@@ -150,3 +150,23 @@ RNG / 计数与连续运行精确一致，详见上述报告中的旧元数据�
 ## RoboMME
 
 增加 `--benchmark robomme` 可使用保留 demo 前缀的数据视图；H/E 从初始化 checkpoint 继承，默认 demo 每 E/2 帧写入且不产生监督。训练入口、实测范围和限制见 [RoboMME 训练适配记录](experiments/2026-10-13-robomme-observation-memory-training.md)。LIBERO 默认入口与已有恢复协议保持兼容。
+
+## AQMem LIBERO 联合训练（2026-10-14）
+
+新增 opt-in `training_mode="joint"` 和 `sampling_mode="mixed_tasks"`，配置与命令见
+[AQMem LIBERO recipe](../configs/ttt/aqmem/libero/README.md)。未设置时仍为
+`alternating` / `same_task`，已有 RoboMME/T²Mem recipe 行为不变。
+
+混合采样先按 task 的随机排列逐轮抽取，再在各 task 内均匀抽 episode：
+B ≤ task 数时任务不重复；B > task 数时各 task 计数相差至多 1。
+联合模式用一个 AdamW 包含原先的互斥参数组，每个 outer step 同时更新 policy 与 memory，
+保留各组 LR/decay，统一裁剪所有活动梯度，warmup/cosine 按联合更新数计算。
+完整 VLM 保持可训练。默认候选全局 batch=8、TBPTT=8、gate=0.001、Stage2 20k 初始化。
+
+保存时两种模式进入 recipe；恢复旧 checkpoint 只为缺失的这两个字段补旧默认值，
+其余字段仍严格匹配。更换模式必须作为新实验 warm start，不能 exact resume。
+日志新增全局 `global_task_count` / `global_task_counts` 和 `optimizer_groups`。
+联合 checkpoint 保存一组 joint optimizer；原交替 checkpoint 仍保存两组 optimizer。
+
+本轮验证范围为 CPU tiny 模型与 Gloo，真实权重只做 metadata dry-run；没有启动此 recipe
+的真实 GPU 训练，也没有多 GPU CUDA/NCCL 显存、吞吐或数值验收。

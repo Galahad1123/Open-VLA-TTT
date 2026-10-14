@@ -117,8 +117,10 @@ def test_dry_run_does_not_load_weights_or_create_output(tmp_path):
     assert not (tmp_path / "runs").exists()
 
 
-@pytest.mark.parametrize("benchmark", ["libero", "robomme"])
-def test_cli_real_checkpoint_processors_and_resume(monkeypatch, tmp_path, benchmark):
+@pytest.mark.parametrize(
+    "benchmark,joint", [("libero", False), ("robomme", False), ("libero", True)]
+)
+def test_cli_real_checkpoint_processors_and_resume(monkeypatch, tmp_path, benchmark, joint):
     import torch
     from lerobot.configs.types import FeatureType, PolicyFeature
     from lerobot.datasets import lerobot_dataset
@@ -227,6 +229,8 @@ def test_cli_real_checkpoint_processors_and_resume(monkeypatch, tmp_path, benchm
                 "execution": 2,
                 "global_batch_size": 1,
                 "tbptt_events": 3,
+                "training_mode": "joint" if joint else "alternating",
+                "sampling_mode": "mixed_tasks" if joint else "same_task",
             }
         )
     )
@@ -246,6 +250,8 @@ def test_cli_real_checkpoint_processors_and_resume(monkeypatch, tmp_path, benchm
             "--cpu",
             "--benchmark",
             benchmark,
+            "--architecture",
+            "aqmem" if joint else "t2mem",
             "--checkpoint",
             str(checkpoint),
             "--dataset-root",
@@ -265,6 +271,11 @@ def test_cli_real_checkpoint_processors_and_resume(monkeypatch, tmp_path, benchm
     import pytest
 
     saved_first = torch.load(tmp_path / "first/step-00000001/training.pt", weights_only=False)
+    if not joint:
+        legacy = dict(saved_first, recipe=dict(saved_first["recipe"]))
+        for key in ("training_mode", "sampling_mode"):
+            del legacy["recipe"][key]
+        torch.save(legacy, tmp_path / "first/step-00000001/training.pt")
     changed_augmentation = saved_first["identity"]["augmentation"].copy()
     changed_augmentation["tfs"] = dict(reversed(list(changed_augmentation["tfs"].items())))
     augmentation_path = tmp_path / "changed-augmentation.json"
@@ -311,6 +322,8 @@ def test_cli_real_checkpoint_processors_and_resume(monkeypatch, tmp_path, benchm
             str(tmp_path / "whole"),
             "--benchmark",
             benchmark,
+            "--architecture",
+            "aqmem" if joint else "t2mem",
             "--recipe",
             str(recipe_path),
             "--memory-config",
@@ -351,7 +364,7 @@ def test_cli_real_checkpoint_processors_and_resume(monkeypatch, tmp_path, benchm
         ]
     )
     saved = torch.load(tmp_path / "second/step-00000002/training.pt", weights_only=False)
-    assert saved["control"]["counts"] == {"memory": 1, "policy": 1}
+    assert saved["control"]["counts"] == ({"joint": 2} if joint else {"memory": 1, "policy": 1})
     assert saved["totals"]["episodes"] == 2
     assert saved["identity"] == saved_first["identity"]
     from safetensors.torch import load_file
@@ -401,3 +414,10 @@ def test_checkpoint_augmentation_roundtrip_preserves_seeded_pixels():
     actual = temporal_transform(image, ImageTransforms(restored), seed=7, camera="image")
     expected = temporal_transform(image, ImageTransforms(config), seed=7, camera="image")
     torch.testing.assert_close(actual, expected, atol=0, rtol=0)
+
+
+def test_joint_config_starts_full_policy_and_memory_training():
+    base = Evo1GrootConfig(device="cpu")
+    cfg = resolve_config(base, "aqmem", Recipe(training_mode="joint"), device="cpu")
+    assert cfg.memory_training == "joint"
+    assert cfg.finetune_language_model and cfg.finetune_vision_model and cfg.finetune_action_head
