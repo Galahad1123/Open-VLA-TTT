@@ -1,6 +1,6 @@
 # AQMem LIBERO Joint Training with Mixed Tasks
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Enable an AQMem LIBERO experiment initialized from Evo1-GR00T Stage2, jointly training policy and memory with task-diverse episode batches and the existing distributed gradient reducer.
 
@@ -35,10 +35,10 @@
 
 **Interfaces:** Add `Recipe.training_mode` (`alternating` default, `joint`) and `Recipe.sampling_mode` (`same_task` default, `mixed_tasks`). Add `MixedTaskEpisodeSampler` with the same constructor and `batch(step)` / `local_batch(step, rank, world_size)` interface as `EpisodeSampler`.
 
-- [ ] Write tests for mixed batches: task uniqueness for B <= task count; balanced task counts for larger B; seed/step reproducibility; independence from episode length; reconstruction of the global batch from 1/2/4 rank slots; invalid mode rejection.
-- [ ] Run the new tests and confirm failures are due to absent functionality.
-- [ ] Implement task sampling as shuffled complete task cycles plus a shuffled partial cycle, choosing an episode uniformly within each selected task. Task RNG is deterministic by seed and outer step; global sample seeds depend on slot, not rank. Keep the existing sampler unchanged.
-- [ ] Extend `Recipe.phase` / `phase_budget` for a single `joint` phase. Verify legacy phase sequences and sampler tests remain unchanged.
+- [x] Write tests for mixed batches: task uniqueness for B <= task count; balanced task counts for larger B; seed/step reproducibility; independence from episode length; reconstruction of the global batch from 1/2/4 rank slots; invalid mode rejection.
+- [x] Run the new tests and confirm failures are due to absent functionality.
+- [x] Implement task sampling as shuffled complete task cycles plus a shuffled partial cycle, choosing an episode uniformly within each selected task. Task RNG is deterministic by seed and outer step; global sample seeds depend on slot, not rank. Keep the existing sampler unchanged.
+- [x] Extend `Recipe.phase` / `phase_budget` for a single `joint` phase. Verify legacy phase sequences and sampler tests remain unchanged.
 
 ## Task 2: Joint outer optimization and AQMem regression
 
@@ -46,9 +46,9 @@
 
 **Interfaces:** Preserve `PhaseOptimizers.begin(step)`, `step()`, `state_dict()`, `load_state_dict()`. In joint mode use one AdamW with the union of the existing disjoint policy/memory groups and counts `{"joint": n}`. Set model phase to `joint` before forward. Clip the combined active gradients once.
 
-- [ ] Add real tiny AQMem tests proving vision/language/action/memory receive gradients and update in the same step, parameter identities are unique, LR/decay groups are preserved, and scheduler/counters count outer updates once.
-- [ ] Add a zero-gate AQMem regression using enabled memory and prior writes, matching attention backend, fixed inputs/noise, and comparison of velocity and sampled actions to the initialized baseline. Verify the gate can receive an outer gradient at zero initialization.
-- [ ] Run tests red, implement joint optimizer behavior, then run engine/connection regression tests green.
+- [x] Add real tiny AQMem tests proving vision/language/action/memory receive gradients and update in the same step, parameter identities are unique, LR/decay groups are preserved, and scheduler/counters count outer updates once.
+- [x] Add a zero-gate AQMem regression using enabled memory and prior writes, matching attention backend, fixed inputs/noise, and comparison of velocity and sampled actions to the initialized baseline. Verify the gate can receive an outer gradient at zero initialization.
+- [x] Run tests red, implement joint optimizer behavior, then run engine/connection regression tests green.
 
 ## Task 3: Runner, logs, and exact resume
 
@@ -56,10 +56,10 @@
 
 **Interfaces:** Runner chooses the sampler from `sampling_mode`; configuration selects initial model phase from `training_mode`. Save both modes in recipe metadata. Log global batch task diversity and named optimizer categories/LRs so joint updates are auditable.
 
-- [ ] Add uninterrupted-versus-resumed tiny AQMem joint/mixed tests comparing final tensors, optimizer state, counters, and sampled progress.
-- [ ] Test rejection of changed batch/mode/identity/world size. Add a legacy recipe fixture without the two new fields and ensure it restores as alternating/same-task with unchanged numerical behavior.
-- [ ] Run tests red; normalize only absent new recipe fields to legacy defaults at restore, retaining strict equality for other settings; implement runner/config plumbing.
-- [ ] Run checkpoint and CLI tests green, including restoration into a fresh output directory.
+- [x] Add uninterrupted-versus-resumed tiny AQMem joint/mixed tests comparing final tensors, optimizer state, counters, and sampled progress.
+- [x] Test rejection of changed batch/mode/identity/world size. Add a legacy recipe fixture without the two new fields and ensure it restores as alternating/same-task with unchanged numerical behavior.
+- [x] Run tests red; normalize only absent new recipe fields to legacy defaults at restore, retaining strict equality for other settings; implement runner/config plumbing.
+- [x] Run checkpoint and CLI tests green, including restoration into a fresh output directory.
 
 ## Task 4: Distributed adaptation and CPU verification
 
@@ -67,20 +67,20 @@
 
 **Interfaces:** Preserve existing global-slot partitioning, loss division by global batch, and explicit gradient `all_reduce(SUM)` without world-size averaging. Fast states remain rank-local and episode-local.
 
-- [ ] Extend the probe with actual mixed-task AQMem joint training through the production runner using variable-length episodes. The fixture must make different task samples observably different.
-- [ ] Compare one CPU process against two Gloo ranks for loss, gradients, final parameters, and optimizer progression. Verify within-run ranks agree exactly and inter-world comparisons use existing tolerances.
-- [ ] Verify distributed joint resume matches uninterrupted execution at the same world size, including both parameter families' AdamW states.
-- [ ] Retain existing alternating-variant checks and globally-unused-gradient handling. Document CPU/Gloo evidence separately from unexecuted CUDA/NCCL support.
+- [x] Extend the probe with actual mixed-task AQMem joint training through the production runner using variable-length episodes. The fixture must make different task samples observably different.
+- [x] Compare one CPU process against two Gloo ranks for loss, gradients, final parameters, and optimizer progression. Verify within-run ranks agree exactly and inter-world comparisons use existing tolerances.
+- [x] Verify distributed joint resume matches uninterrupted execution at the same world size, including both parameter families' AdamW states.
+- [x] Retain existing alternating-variant checks and globally-unused-gradient handling. Document CPU/Gloo evidence separately from unexecuted CUDA/NCCL support.
 
 ## Task 5: Experiment assets, dry run, and final review
 
 **Files:** Create `configs/ttt/aqmem/libero/recipe.json`, `memory.json`, `README.md`; update `docs/episode-parallel-training.md` for modes and compatibility.
 
-- [ ] Add the recipe candidate above and a memory override with gate 0.001 and explicit adaptive writes. Keep machine paths out of portable recipe JSON.
-- [ ] Document explicit Stage2 20k initialization, optional 30k selection, single-GPU command, 2/4/8-rank Accelerate commands with global batch 8, stop-after smoke, and exact resume.
-- [ ] Run no-CUDA dry-run against the real local Stage2 20k configuration and LIBERO metadata; verify AQMem, joint, mixed-task batch 8, H50/E10, full VLM training, and source processors/augmentation selection.
-- [ ] Run the complete pytest suite offline with CUDA hidden; distinguish asset-dependent skips and any sandbox socket restrictions. Run Ruff on changed code.
-- [ ] Review the diff for unintended model/legacy recipe changes and verify work remains only on `feat/observation-memory`. Report tests and remaining GPU validation; do not merge to master or launch long training.
+- [x] Add the recipe candidate above and a memory override with gate 0.001 and explicit adaptive writes. Keep machine paths out of portable recipe JSON.
+- [x] Document explicit Stage2 20k initialization, optional 30k selection, single-GPU command, 2/4/8-rank Accelerate commands with global batch 8, stop-after smoke, and exact resume.
+- [x] Run no-CUDA dry-run against the real local Stage2 20k configuration and LIBERO metadata; verify AQMem, joint, mixed-task batch 8, H50/E10, full VLM training, and source processors/augmentation selection.
+- [x] Run the complete pytest suite offline with CUDA hidden; distinguish asset-dependent skips and any sandbox socket restrictions. Run Ruff on changed code.
+- [x] Review the diff for unintended model/legacy recipe changes and verify work remains only on `feat/observation-memory`. Report tests and remaining GPU validation; do not merge to master or launch long training.
 
 ## Pre-implementation inspection
 
@@ -89,3 +89,13 @@
 - Relevant existing baseline tests: **19 passed**, with 18 upstream TorchScript deprecation warnings.
 - Model-level `joint` already exists; the missing functionality is optimizer/runner support, mixed sampling, and integrated resume/distributed coverage.
 - No implementation changes made before plan review.
+
+## Completion evidence
+
+- Implemented on `feat/observation-memory`, implementation commit `867cd83`; master untouched.
+- Full offline CPU suite with venv CLI on PATH: **247 passed, 7 skipped**, 18 upstream TorchScript deprecation warnings (84.32s).
+- Single-process and dual-rank Gloo compare joint AQMem mixed-task loss, gradients, parameters and AdamW states; same-world resume matches exactly. No reducer changes were needed.
+- Ruff check/format and git diff whitespace checks pass.
+- Real Stage2 20k/local LIBERO metadata dry-run passes; source normalization/processor files and saved augmentation are present. No real model weights were loaded for training.
+- Fresh independent whole-change review: no Critical, Important or Minor findings.
+- GPU training not launched. CUDA/NCCL numerics, peak VRAM and throughput remain unvalidated by design; deployment cost and training ETA require measurement.
