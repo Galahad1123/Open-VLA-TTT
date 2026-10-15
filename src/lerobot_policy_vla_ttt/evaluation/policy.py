@@ -150,6 +150,17 @@ class Evo1Inference:
             "config": json.loads((path / "config.json").read_text()),
         }
 
+        if benchmark == "robomme" and hasattr(self.policy, "consume_demo"):
+            self.metadata.update(
+                demonstration_mode="write_only_prefix", demo_stride=n_action_steps // 2
+            )
+
+    def consume_demo(self, observation):
+        if self.metadata.get("demonstration_mode") != "write_only_prefix":
+            raise ValueError("Policy does not support demonstration writes")
+        with torch.no_grad():
+            self.policy.consume_demo(self.pre(observation_batch(observation)))
+
     def reset(self, seed):
         torch.manual_seed(seed)
         if torch.cuda.is_available():

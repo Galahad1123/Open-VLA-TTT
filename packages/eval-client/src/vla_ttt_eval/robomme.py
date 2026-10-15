@@ -1,4 +1,4 @@
-"""RoboMME joint-angle, task-goal-only, memoryless baseline adapter."""
+"""RoboMME joint-angle adapter with an optional read-only demo prefix."""
 
 from .observations import robomme_observation
 
@@ -29,6 +29,7 @@ class RoboMMEEnvironment:
         self.max_steps = max_steps
         self.env = None
         self.last_status = None
+        self._reset_observations = None
 
     def reset(self, episode, seed):
         # Official episode metadata fixes environment seeds; seed controls policy only.
@@ -46,8 +47,26 @@ class RoboMMEEnvironment:
         self.rollout_step_limit = int(
             self.env.max_steps_without_demonstration - self.env.steps_without_demonstration
         )
+        self._reset_observations = raw
         self.task = info["task_goal"][0]
         return robomme_observation(raw, self.task)
+
+    def demo_observations(self, stride):
+        """Pinned wrapper reset returns demo frames followed by one execution frame."""
+        if type(stride) is not int or stride < 1:
+            raise ValueError("Demo stride must be positive")
+        raw = self._reset_observations
+        if raw is None:
+            raise ValueError("Demo prefix requires a fresh reset")
+        keys = ("front_rgb_list", "wrist_rgb_list", "joint_state_list", "gripper_state_list")
+        lengths = {len(raw[k]) for k in keys}
+        if len(lengths) != 1 or not lengths or next(iter(lengths)) < 1:
+            raise ValueError("Inconsistent reset observation timelines")
+        try:
+            for index in range(0, len(raw["front_rgb_list"]) - 1, stride):
+                yield robomme_observation(raw, self.task, index=index)
+        finally:
+            self._reset_observations = None
 
     def step(self, action):
         raw, _, terminated, truncated, info = self.env.step(action)
@@ -59,6 +78,7 @@ class RoboMMEEnvironment:
         return robomme_observation(raw, self.task), success, done
 
     def close(self):
+        self._reset_observations = None
         if self.env is not None:
             self.env.close()
             self.env = None

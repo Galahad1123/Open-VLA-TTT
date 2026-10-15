@@ -43,6 +43,11 @@ class PolicyClient:
         self._request("reset", episode_id=episode_id, seed=seed)
         self.episode_id = episode_id
 
+    def consume_demo(self, observation):
+        if self.episode_id is None:
+            raise ValueError("reset is required before demo")
+        return self._request("demo", episode_id=self.episode_id, payload=observation)
+
     def infer(self, observation):
         if self.episode_id is None:
             raise ValueError("reset is required before infer")

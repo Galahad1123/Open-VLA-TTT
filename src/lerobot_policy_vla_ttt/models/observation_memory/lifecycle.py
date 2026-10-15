@@ -16,6 +16,16 @@ class HalfExecutionLifecycle:
         self._last_action = None
         self._last_action_step = -1
 
+    @torch.no_grad()
+    def consume_demo(self, batch):
+        """Write a sampled prefix observation without advancing the execution clock."""
+        if self.clock.last != -1 or self._chunk is not None:
+            raise ValueError("Demo observations must arrive before execution")
+        self.eval()
+        with self._maybe_autocast():
+            candidate = self._write_candidate(batch)
+        self.inference_state = None if candidate is None else tuple(s.detach() for s in candidate)
+
     def _validate_batch(self, batch):
         size = len(batch["observation.state"])
         if self._chunk is not None and size != len(self._chunk):

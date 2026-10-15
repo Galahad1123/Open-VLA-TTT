@@ -17,6 +17,11 @@ def run_episode(env, client, task, episode, seed, max_steps):
     observation = env.reset(episode, seed)
     step_limit = getattr(env, "rollout_step_limit", max_steps)
     client.reset(f"{task}/{episode}", seed)
+    demo_writes = 0
+    if getattr(client, "metadata", {}).get("demonstration_mode") == "write_only_prefix":
+        for frame in env.demo_observations(client.metadata["demo_stride"]):
+            client.consume_demo(frame)
+            demo_writes += 1
     latencies = []
     success, done = False, False
     for step in range(1, step_limit + 1):  # noqa: B007 - step is recorded after termination
@@ -44,6 +49,7 @@ def run_episode(env, client, task, episode, seed, max_steps):
             if hasattr(env, "env_seed")
             else {}
         ),
+        "demo_writes": demo_writes,
         "elapsed_s": time.perf_counter() - start,
         "rpc_latency_mean_s": float(np.mean(latencies)),
         "rpc_latency_p95_s": float(np.percentile(latencies, 95)),

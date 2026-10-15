@@ -17,6 +17,7 @@ class Session:
         self.policy = policy
         self.next_id = 0
         self.episode_id = None
+        self.execution_started = False
 
     def handle(self, request):
         if not isinstance(request, dict):
@@ -30,12 +31,25 @@ class Session:
                 raise ValueError("reset requires episode_id and nonnegative integer seed")
             self.policy.reset(seed)
             self.episode_id = episode
+            self.execution_started = False
+            result = {}
+        elif request.get("type") == "demo":
+            if self.episode_id is None:
+                raise ValueError("reset required before demo")
+            if request.get("episode_id") != self.episode_id:
+                raise ValueError("Wrong episode_id")
+            if self.execution_started:
+                raise ValueError("Demo must arrive before inference")
+            if self.policy.metadata.get("demonstration_mode") != "write_only_prefix":
+                raise ValueError("Policy does not support demonstration writes")
+            self.policy.consume_demo(request["payload"])
             result = {}
         elif request.get("type") == "infer":
             if self.episode_id is None:
                 raise ValueError("reset required before infer")
             if request.get("episode_id") != self.episode_id:
                 raise ValueError("Wrong episode_id")
+            self.execution_started = True
             action = np.asarray(self.policy.infer(request["payload"]), dtype=np.float32)
             if (
                 action.shape != (self.policy.metadata["action_dim"],)

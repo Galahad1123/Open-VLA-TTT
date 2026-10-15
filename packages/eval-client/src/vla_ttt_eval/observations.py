@@ -26,17 +26,17 @@ def libero_observation(raw, task):
     }
 
 
-def robomme_observation(raw, task):
-    # Explicit memoryless baseline: conditioning video/history is not consumed.
+def robomme_observation(raw, task, index=-1):
+    # Select one frame; no action or privileged subgoal labels cross the wire.
     return {
         "images": {
-            "image": numpy(raw["front_rgb_list"][-1]),
-            "image2": numpy(raw["wrist_rgb_list"][-1]),
+            "image": numpy(raw["front_rgb_list"][index]),
+            "image2": numpy(raw["wrist_rgb_list"][index]),
         },
         "state": np.concatenate(
             (
-                numpy(raw["joint_state_list"][-1]).reshape(-1)[:7],
-                numpy(raw["gripper_state_list"][-1]).reshape(-1)[:1],
+                numpy(raw["joint_state_list"][index]).reshape(-1)[:7],
+                numpy(raw["gripper_state_list"][index]).reshape(-1)[:1],
             )
         ).astype(np.float32),
         "task": task,
