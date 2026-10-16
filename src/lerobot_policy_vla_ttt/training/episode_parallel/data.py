@@ -145,6 +145,12 @@ class EpisodeSource:
         ):
             supervised = index >= start and (index - start) % self.execution == 0
             frame = dict(self.dataset[index])
+            # RoboMME decodes uint8; LIBERO already supplies float [0, 1].
+            # Normalize before augmentation, for demo and execution alike.
+            # InternVL's resize expects [0, 1] and would saturate uint8 input.
+            for key, value in frame.items():
+                if key.startswith("observation.images.") and value.dtype == torch.uint8:
+                    frame[key] = value.to(dtype=torch.float32) / 255.0
             if self.transform is not None:
                 for key, value in frame.items():
                     if key.startswith("observation.images."):

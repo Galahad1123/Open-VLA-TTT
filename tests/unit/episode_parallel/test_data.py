@@ -122,3 +122,54 @@ def test_mixed_sampler_balances_tasks_and_replays_global_slots(batch_size):
                 assert sorted(shards, key=lambda s: s.slot) == samples
     assert len(seen) == 5
     assert sampler.batch(0) != sampler.batch(1)
+
+
+@pytest.mark.parametrize("augment", [False, True])
+def test_episode_images_match_float_eval_before_augmentation(augment):
+    from lerobot_policy_vla_ttt.evo1.internvl3_embedder import _batched_resize_01
+
+    pixels = torch.tensor([0, 1, 32, 128, 254, 255], dtype=torch.uint8).reshape(1, 2, 3)
+    pixels = pixels.expand(3, -1, -1).clone()
+    expected = pixels.float() / 255
+    seen = []
+
+    def transform(image):
+        assert image.dtype == torch.float32
+        torch.testing.assert_close(image, expected, rtol=0, atol=0)
+        seen.append(image)
+        return image * 0.5
+
+    def events(image):
+        frames = [
+            {
+                "observation.images.image": image,
+                "observation.images.image2": image,
+                "observation.state": torch.tensor([128.0]),
+                "action": torch.ones(2, 1),
+            }
+            for _ in range(7)
+        ]
+        source = EpisodeSource(
+            frames,
+            [Episode(0, "task", 0, 7, execution_start=2)],
+            execution=4,
+            horizon=2,
+            transform=transform if augment else None,
+        )
+        return list(source.events(0, seed=1))
+
+    actual, reference = events(pixels), events(expected)
+    assert [e.supervised for e in actual] == [False, True, False, True]
+    for a, b in zip(actual, reference, strict=True):
+        for key in ("observation.images.image", "observation.images.image2"):
+            torch.testing.assert_close(a.frame[key], b.frame[key], rtol=0, atol=0)
+            torch.testing.assert_close(
+                _batched_resize_01(a.frame[key], 8),
+                _batched_resize_01(b.frame[key], 8),
+                rtol=0,
+                atol=0,
+            )
+        assert a.frame["observation.state"].item() == 128
+    assert bool(seen) == augment
+    assert pixels.dtype == torch.uint8 and pixels.max() == 255
+    torch.testing.assert_close(expected, pixels.float() / 255, rtol=0, atol=0)

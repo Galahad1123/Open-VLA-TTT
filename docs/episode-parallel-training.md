@@ -2,6 +2,8 @@
 
 独立入口 `python -m lerobot_policy_vla_ttt.training.train_episode_parallel` 支持 MAC、MAG、MAL、AQMem、T²Mem，已合入 master。原 `train_robottt`、`train_titans`、`tbptt.py` 保持独立。
 
+**2026-10-16 图像尺度修复：** 旧版 RoboMME episode 路径遗漏 uint8 图像的 `/255`，导致训练视觉输入饱和。使用该路径的 T2MEM、AQMem、MAC/MAG/MAL 均受影响；请更新后从正常 Stage1 检查点重启 Stage2，不要恢复受影响的训练。LIBERO 默认浮点路径和 Evo1-GROOT 常规训练器不受本次问题影响。影响范围、修复与验证见 [修复记录](experiments/2026-10-16-robomme-episode-image-scale-fix.md)。
+
 本入口落实 [LIBERO recipe](experiments/2026-10-10-libero-observation-memory-training-recipe.md) 的完整 episode 训练，既可单进程运行，也可用 Accelerate 启动多 GPU 进程。已记录 tiny 真实模型的 CPU/Gloo 和真实权重单 GPU 验收，见文末；多卡 CUDA/NCCL、BF16 一致性及加速比仍需目标机器验收。首次部署请看 [跨机器训练快速开始](portable-training.md)。
 
 ## 并行和损失语义
