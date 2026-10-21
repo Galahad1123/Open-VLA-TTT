@@ -113,7 +113,8 @@ def test_baseline_rejects_memory_training(monkeypatch):
         )
 
 
-def test_baseline_cli_dry_run(tmp_path):
+@pytest.mark.parametrize("recipe_name", ["libero-evo1-groot-episode", "libero-evo1-groot-stream"])
+def test_baseline_cli_dry_run(tmp_path, recipe_name):
     import json
     import os
     import subprocess
@@ -148,7 +149,7 @@ def test_baseline_cli_dry_run(tmp_path):
             "--output",
             str(output),
             "--recipe",
-            "configs/training/libero-evo1-groot-episode.json",
+            f"configs/training/{recipe_name}.json",
             "--dry-run",
         ],
         cwd=root,
@@ -161,5 +162,8 @@ def test_baseline_cli_dry_run(tmp_path):
     resolved = json.loads(result.stdout)
     assert resolved["recipe"]["training_mode"] == "policy"
     assert resolved["recipe"]["sampling_mode"] == "mixed_tasks"
+    assert resolved["recipe"]["update_unit"] == (
+        "chunk" if recipe_name.endswith("stream") else "episode"
+    )
     assert "memory_training" not in resolved["policy"]
     assert not output.exists()

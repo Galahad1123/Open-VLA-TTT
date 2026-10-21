@@ -144,29 +144,37 @@ class EpisodeSource:
             range(ep.start, start, self.demo_stride), range(start, ep.end, self.execution // 2)
         ):
             supervised = index >= start and (index - start) % self.execution == 0
-            frame = dict(self.dataset[index])
-            # RoboMME decodes uint8; LIBERO already supplies float [0, 1].
-            # Normalize before augmentation, for demo and execution alike.
-            # InternVL's resize expects [0, 1] and would saturate uint8 input.
+            yield Event(self._frame(ep, index, seed=seed, supervised=supervised), supervised)
+
+    def decision(self, episode_id, decision, *, seed):
+        """Read one supervised chunk directly, without decoding preceding frames."""
+        ep = self.episodes[episode_id]
+        if not 0 <= decision < self.decision_count(episode_id):
+            raise ValueError("Decision outside episode")
+        start = ep.start if ep.execution_start is None else ep.execution_start
+        return self._frame(ep, start + decision * self.execution, seed=seed, supervised=True)
+
+    def _frame(self, ep, index, *, seed, supervised):
+        frame = dict(self.dataset[index])
+        # RoboMME decodes uint8; LIBERO already supplies float [0, 1].
+        # Normalize before augmentation, for demo and execution alike.
+        # InternVL's resize expects [0, 1] and would saturate uint8 input.
+        for key, value in frame.items():
+            if key.startswith("observation.images.") and value.dtype == torch.uint8:
+                frame[key] = value.to(dtype=torch.float32) / 255.0
+        if self.transform is not None:
             for key, value in frame.items():
-                if key.startswith("observation.images.") and value.dtype == torch.uint8:
-                    frame[key] = value.to(dtype=torch.float32) / 255.0
-            if self.transform is not None:
-                for key, value in frame.items():
-                    if key.startswith("observation.images."):
-                        frame[key] = temporal_transform(
-                            value, self.transform, seed=seed, camera=key
-                        )
-            if supervised:
-                action = frame["action"]
-                if action.ndim != 2 or action.shape[0] != self.horizon:
-                    raise ValueError("Dataset must return a full action horizon")
-                valid = torch.arange(self.horizon) < (ep.end - index)
-                frame["action_mask"] = (
-                    frame.get("action_mask", torch.ones_like(action, dtype=torch.bool))
-                    & valid[:, None]
-                )
-            else:
-                for key in ("action", "action_mask", "action_is_pad"):
-                    frame.pop(key, None)
-            yield Event(default_collate([frame]), supervised)
+                if key.startswith("observation.images."):
+                    frame[key] = temporal_transform(value, self.transform, seed=seed, camera=key)
+        if supervised:
+            action = frame["action"]
+            if action.ndim != 2 or action.shape[0] != self.horizon:
+                raise ValueError("Dataset must return a full action horizon")
+            valid = torch.arange(self.horizon) < (ep.end - index)
+            frame["action_mask"] = (
+                frame.get("action_mask", torch.ones_like(action, dtype=torch.bool)) & valid[:, None]
+            )
+        else:
+            for key in ("action", "action_mask", "action_is_pad"):
+                frame.pop(key, None)
+        return default_collate([frame])

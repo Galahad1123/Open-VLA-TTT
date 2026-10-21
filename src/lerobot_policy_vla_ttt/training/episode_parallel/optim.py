@@ -80,10 +80,12 @@ class PhaseOptimizers:
             )
         for optimizer in self.optimizers.values():
             optimizer.zero_grad(set_to_none=True)
-        update = self.counts[self.active] + 1
+        # Chunk-stream baseline follows LeRobot LambdaLR: update 0 uses LR 0
+        # during warmup. Preserve the historical episode schedule indexing.
+        update = self.counts[self.active] + (self.recipe.update_unit != "chunk")
         budget = self.recipe.phase_budget(self.active)
         warmup = min(self.recipe.warmup_steps, budget)
-        if update <= warmup:
+        if warmup and update <= warmup:
             factor = update / warmup
         else:
             progress = (update - warmup) / max(1, budget - warmup)

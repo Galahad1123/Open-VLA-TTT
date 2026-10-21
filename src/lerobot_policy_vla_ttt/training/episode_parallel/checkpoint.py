@@ -21,8 +21,13 @@ def canonical(value):
 
 
 def normalize_saved_recipe(values):
-    """Only the two newly introduced modes have implicit legacy defaults."""
-    return {"training_mode": "alternating", "sampling_mode": "same_task", **values}
+    """Missing mode fields retain the historical full-episode behavior."""
+    return {
+        "training_mode": "alternating",
+        "sampling_mode": "same_task",
+        "update_unit": "episode",
+        **values,
+    }
 
 
 def model_contract(policy, *, portable=False):

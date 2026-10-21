@@ -207,3 +207,56 @@ baseline 不保存跨帧状态。日志中的 events 包括跳过前向的无监
 替换 architecture 和 recipe 即可。断点恢复使用同一 recipe 和 world size，
 `--resume` 可自动识别 baseline 检查点。首次初始化 baseline 必须显式指定
 architecture，以保留旧命令默认初始化 T2MEM 的行为。
+
+## 固定 chunk batch 的序列对照（方案二）
+
+使用 `configs/training/libero-evo1-groot-stream.json`。该配置只适用于
+无记忆的 `evo1_groot`，设置 `training_mode: policy`、
+`sampling_mode: mixed_tasks`、`update_unit: chunk`。
+
+```bash
+CUDA_VISIBLE_DEVICES=0 uv run --frozen python \
+  -m lerobot_policy_vla_ttt.training.train_episode_parallel \
+  --architecture evo1_groot --benchmark libero \
+  --machine configs/machine.local.toml \
+  --run-name libero-evo1-groot-stream-seed1000 \
+  --recipe configs/training/libero-evo1-groot-stream.json
+```
+
+机器配置的 `assets.initial_checkpoint` 应指向原随机 chunk Stage2 使用的
+LIBERO Stage1 5000 步权重。资源路径不写入共享 recipe。可加 `--dry-run`
+检查配置，或 `--stop-after 4` 做真实短测而不缩短学习率日程。
+
+- 全局 batch 4 表示 **4 条持续 episode 流各取 1 个监督 chunk**，每步严格
+  4 个 chunk 后统一更新 VLM 与动作头。内部逐 chunk 前后向累积，避免保留
+  多个计算图；梯度累积后只裁剪一次。
+- 每条流依次读取 episode 的第 0、10、20…帧，H=50，尾部越界动作屏蔽。
+  不读取 E/2 的无监督中间帧，不重复读取历史帧。不保存跨帧模型状态，
+  `tbptt_events` 不参与此模式的计算。
+- episode 结束后仅替换该 slot，其他流继续。任务优先从当前占用最少的任务中
+  随机选取，然后在任务内均匀抽 episode；任务足够时每步任务互异。
+  持续流和完整 episode 的独立 batch 采样不是同一个采样分布。
+- loss 为全局 batch 的 **有效动作元素平方误差之和 / 有效动作元素总数**，
+  与随机 chunk baseline 的 reduction 规则一致，不按 episode 等权。
+  多进程先汇总有效元素分母，再各自反向，最后梯度求和，避免不同 rank
+  尾部有效长度不同造成加权错误。
+- 每个 step/slot 独立派生模型 RNG，保证每个 chunk 重新采样 flow time/noise，
+  并使随机流不依赖 rank 分片。图像增强仍采用现有 episode 内一致的随机参数。
+- 80,000 步对应 320,000 个监督 chunk；AdamW、峰值 LR=1e-5、
+  weight decay=1e-3、warmup=1000、余弦衰减到 0 对齐原随机 chunk 配置。
+  此模式沿用原 LeRobot scheduler 的零起点：第一个 optimizer step 的 LR 为 0。
+- checkpoint 仍使用普通 baseline 格式及相同 world size 约束。流的位置由
+  seed、episode metadata 和已完成更新数确定；resume 只重放轻量采样元数据
+  重建游标，不读取历史视频或重算模型。不要在同一实验中更改采样算法。
+- 日志新增 `stream_positions`（slot、episode_id、decision）。
+  `decisions`/`events` 每步均为全局 batch 大小；
+  `episodes` 在此模式统计本步开始读取的新 episode 次数，而非完成次数；
+  `supervised_scalars` 是实际 loss 分母。
+
+已有 recipe 未指定 `update_unit` 时仍为 `episode`，
+旧检查点缺失此字段按 `episode` 解释；两种更新模式不可通过 resume 互换。
+方案一的 episode 等权 loss、阶段日程、TBPTT 和 memory 生命周期不变。
+
+这是对齐监督 chunk 数、更新次数和优化器日程的对照，并非所有因素都相同：
+E=10 的起始位置限制、任务混合/轨迹抽样、序列内一致增强仍不同于原随机 chunk。
+若要只检验时序相关性，还需对照组使用相同监督位置与采样分布。

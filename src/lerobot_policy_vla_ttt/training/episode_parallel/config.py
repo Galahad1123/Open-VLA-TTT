@@ -24,8 +24,16 @@ class Recipe:
     minimum_lr_ratio: float = 0.1
     training_mode: str = "alternating"
     sampling_mode: str = "same_task"
+    update_unit: str = "episode"
 
     def __post_init__(self):
+        if self.update_unit not in ("episode", "chunk"):
+            raise ValueError("update_unit must be episode or chunk")
+        if self.update_unit == "chunk":
+            if self.training_mode != "policy":
+                raise ValueError("chunk updates require policy training")
+            if self.sampling_mode != "mixed_tasks":
+                raise ValueError("chunk updates require mixed_tasks sampling")
         if self.training_mode not in ("alternating", "joint", "policy"):
             raise ValueError("training_mode must be alternating, joint or policy")
         if self.sampling_mode not in ("same_task", "mixed_tasks"):
@@ -62,4 +70,6 @@ class Recipe:
         return "memory" if (step // self.phase_length) % 2 == 0 else "policy"
 
     def phase_budget(self, phase):
+        if self.training_mode in ("policy", "joint"):
+            return self.steps if phase == self.training_mode else 0
         return sum(self.phase(step) == phase for step in range(self.steps))

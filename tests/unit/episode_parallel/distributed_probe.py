@@ -220,6 +220,97 @@ def main():
             "control": saved["control"],
             "totals": expected["totals"],
         }
+    # Baseline chunk streams through the production runner, with different tasks
+    # and episode lengths. Capture synchronized gradients at optimizer boundaries.
+    with pytest.MonkeyPatch.context() as patch:
+        recipe = replace(
+            r,
+            training_mode="policy",
+            sampling_mode="mixed_tasks",
+            update_unit="chunk",
+            minimum_lr_ratio=0,
+        )
+        history = []
+        original_step = PhaseOptimizers.step
+
+        def capture_step(control):
+            history.append(
+                {
+                    n: p.grad.detach().cpu().clone()
+                    for n, p in control.policy.named_parameters()
+                    if p.grad is not None
+                }
+            )
+            return original_step(control)
+
+        patch.setattr(PhaseOptimizers, "step", capture_step)
+        torch.manual_seed(12)
+        whole = make_baseline(patch).to(accelerator.device)
+        expected = run(
+            whole,
+            mixed_source(),
+            None,
+            None,
+            recipe=recipe,
+            accelerator=accelerator,
+            output=args.output / "stream-whole",
+            identity={"dataset": "mixed-probe"},
+        )
+        whole_history = history[:]
+        history.clear()
+        torch.manual_seed(12)
+        split = make_baseline(patch).to(accelerator.device)
+        run(
+            split,
+            mixed_source(),
+            None,
+            None,
+            recipe=recipe,
+            accelerator=accelerator,
+            output=args.output / "stream-split",
+            identity={"dataset": "mixed-probe"},
+            stop_after=2,
+        )
+        torch.manual_seed(999)
+        restored = make_baseline(patch).to(accelerator.device)
+        actual = run(
+            restored,
+            mixed_source(),
+            None,
+            None,
+            recipe=recipe,
+            accelerator=accelerator,
+            output=args.output / "stream-resumed",
+            identity={"dataset": "mixed-probe"},
+            resume=args.output / "stream-split/step-00000002",
+        )
+        assert actual == expected
+        torch.testing.assert_close(whole.state_dict(), restored.state_dict(), atol=0, rtol=0)
+        torch.testing.assert_close(whole_history, history, atol=0, rtol=0)
+        saved = torch.load(
+            args.output / "stream-whole/step-00000004/training.pt",
+            weights_only=False,
+            map_location="cpu",
+        )
+        resumed = torch.load(
+            args.output / "stream-resumed/step-00000004/training.pt",
+            weights_only=False,
+            map_location="cpu",
+        )
+        assert_control_equal(saved["control"], resumed["control"])
+        rows = [
+            json.loads(line)
+            for line in (args.output / "stream-whole/metrics.jsonl").read_text().splitlines()
+        ]
+        assert all(row["decisions"] == 4 for row in rows)
+        assert any(row["supervised_scalars"] != rows[0]["supervised_scalars"] for row in rows)
+        result["baseline_stream"] = {
+            "state": {k: v.cpu() for k, v in whole.state_dict().items()},
+            "grads": whole_history,
+            "losses": [row["loss"] for row in rows],
+            "control": saved["control"],
+            "totals": expected["totals"],
+        }
     # Locally absent gradient, globally absent parameter, and phase-safe ordering.
     dummy = torch.nn.ParameterList([torch.nn.Parameter(torch.ones(2)) for _ in range(3)])
     dummy.to(accelerator.device)

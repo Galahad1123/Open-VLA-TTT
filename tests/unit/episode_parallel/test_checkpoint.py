@@ -203,7 +203,7 @@ def test_legacy_recipe_missing_only_new_keys_restores(monkeypatch, tmp_path):
     )
     path = tmp_path / "first/step-00000001"
     saved = torch.load(path / "training.pt", weights_only=False)
-    for key in ("training_mode", "sampling_mode"):
+    for key in ("training_mode", "sampling_mode", "update_unit"):
         del saved["recipe"][key]
     torch.save(saved, path / "training.pt")
     control = PhaseOptimizers(policy, recipe)
