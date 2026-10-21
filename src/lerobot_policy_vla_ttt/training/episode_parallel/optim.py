@@ -12,7 +12,12 @@ def parameter_groups(policy, phase, recipe):
         )
         policy.model.set_phase("joint")
         return groups
-    policy.model.set_phase(f"{phase}_only")
+    if policy.config.type == "evo1_groot":
+        if phase != "policy":
+            raise ValueError("evo1_groot requires policy training")
+        policy.model.set_finetune_flags()
+    else:
+        policy.model.set_phase(f"{phase}_only")
     grouped = {}
     for name, p in policy.named_parameters():
         if not p.requires_grad:
@@ -46,11 +51,17 @@ def parameter_groups(policy, phase, recipe):
 class PhaseOptimizers:
     def __init__(self, policy, recipe):
         self.policy, self.recipe = policy, recipe
+        if policy.config.type == "evo1_groot" and recipe.training_mode != "policy":
+            raise ValueError("evo1_groot requires policy training")
         self.optimizers = {
             phase: torch.optim.AdamW(
                 parameter_groups(policy, phase, recipe), betas=(0.9, 0.999), eps=1e-8
             )
-            for phase in (("joint",) if recipe.training_mode == "joint" else ("memory", "policy"))
+            for phase in (
+                (recipe.training_mode,)
+                if recipe.training_mode in ("joint", "policy")
+                else ("memory", "policy")
+            )
         }
         ids = [id(p) for o in self.optimizers.values() for g in o.param_groups for p in g["params"]]
         if len(ids) != len(set(ids)):
@@ -63,7 +74,10 @@ class PhaseOptimizers:
             raise ValueError("Outer step differs from optimizer counters or budget")
         self.active = self.recipe.phase(step)
         self.policy.train()
-        self.policy.model.set_phase("joint" if self.active == "joint" else f"{self.active}_only")
+        if self.policy.config.type != "evo1_groot":
+            self.policy.model.set_phase(
+                "joint" if self.active == "joint" else f"{self.active}_only"
+            )
         for optimizer in self.optimizers.values():
             optimizer.zero_grad(set_to_none=True)
         update = self.counts[self.active] + 1

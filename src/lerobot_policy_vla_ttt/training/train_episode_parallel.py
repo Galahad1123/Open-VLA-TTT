@@ -27,14 +27,21 @@ from .episode_parallel.checkpoint import canonical, normalize_saved_recipe
 from .episode_parallel.config import Recipe
 from .train_robottt import ARCHITECTURES
 
-KINDS = ("mac", "mag", "mal", "aqmem", "t2mem")
+KINDS = ("evo1_groot", "mac", "mag", "mal", "aqmem", "t2mem")
 LIBERO_REVISION = "86958911c0f959db2bbbdb107eb3e17c5f9c798e"
 
 
 def resolve_config(source, architecture, recipe, *, device, overrides=None):
     if architecture not in KINDS or source.type not in (architecture, "evo1_groot"):
         raise ValueError("Expected evo1_groot or a checkpoint of the selected architecture")
-    cls, _ = ARCHITECTURES[architecture]
+    baseline = architecture == "evo1_groot"
+    if baseline and recipe.training_mode != "policy":
+        raise ValueError("evo1_groot requires training_mode=policy")
+    if not baseline and recipe.training_mode == "policy":
+        raise ValueError("training_mode=policy is only supported for evo1_groot")
+    if baseline and overrides:
+        raise ValueError("evo1_groot does not accept memory overrides")
+    cls = Evo1GrootConfig if baseline else ARCHITECTURES[architecture][0]
     values = {f.name: getattr(source, f.name) for f in dataclasses.fields(source)}
     changes = dict(overrides or {})
     # Overrides describe new memory structure only, never silently alter a backbone.
@@ -68,7 +75,10 @@ def resolve_config(source, architecture, recipe, *, device, overrides=None):
         gradient_checkpointing_use_reentrant=False,
         push_to_hub=False,
     )
-    if source.type == "evo1_groot":
+    if baseline:
+        for key in ("memory_training", "memory_update_protocol"):
+            values.pop(key, None)
+    if source.type == "evo1_groot" and not baseline:
         values.setdefault("memory_update_rule", "t2mem_adaptive")
     if values["chunk_size"] != recipe.horizon:
         raise ValueError("Recipe horizon must match checkpoint chunk_size")
@@ -167,7 +177,11 @@ def main(argv=None):
         portable = resume_state is None or resume_state["identity"].get("version") == 2
         if not args.dry_run and portable:
             source = local_vlm(source)
-        architecture = args.architecture or (source.type if source.type in KINDS else "t2mem")
+        architecture = args.architecture or (
+            source.type
+            if source.type in KINDS and (source.type != "evo1_groot" or args.resume)
+            else "t2mem"
+        )
         from ..baselines.prepare import ROBOMME_REVISION
 
         old_dataset = old_identity.get("dataset", {})
@@ -405,8 +419,10 @@ def _execute_run(
         resolved = resolve_config(
             source, architecture, recipe, device=accelerator.device, overrides=overrides
         )
-        _, policy_cls = ARCHITECTURES[architecture]
-        if source.type == "evo1_groot":
+        policy_cls = (
+            Evo1GrootPolicy if architecture == "evo1_groot" else ARCHITECTURES[architecture][1]
+        )
+        if source.type == "evo1_groot" and architecture != "evo1_groot":
             baseline_config = dataclasses.replace(source, device="cpu", vlm_dtype="float32")
             baseline = Evo1GrootPolicy.from_pretrained(
                 checkpoint, config=baseline_config, local_files_only=True

@@ -10,6 +10,7 @@ import torch
 import torch.distributed as dist
 from accelerate import Accelerator
 
+from episode_parallel.test_baseline import make_baseline
 from episode_parallel.test_checkpoint import assert_control_equal, mixed_source, source
 from episode_parallel.test_engine import episode_events, make_policy
 from lerobot_policy_vla_ttt.training.episode_parallel.config import Recipe
@@ -35,10 +36,12 @@ def main():
     with run_directory(args.output / "logged", accelerator):
         print(f"rank {accelerator.process_index} ready", flush=True)
     result = {}
-    for kind in ("t2mem", "aqmem", "mac", "mag", "mal"):
+    for kind in ("evo1_groot", "t2mem", "aqmem", "mac", "mag", "mal"):
         with pytest.MonkeyPatch.context() as patch:
             torch.manual_seed(12)
-            policy = make_policy(kind, patch).to(accelerator.device)
+            policy = (
+                make_baseline(patch) if kind == "evo1_groot" else make_policy(kind, patch)
+            ).to(accelerator.device)
             if args.device == "cuda":
                 policy.config.dtype = "bfloat16"
             broadcast_model(policy)
@@ -50,6 +53,7 @@ def main():
                 horizon=3,
                 execution=2,
                 tbptt_events=3,
+                training_mode="policy" if kind == "evo1_groot" else "alternating",
             )
             control = PhaseOptimizers(policy, r)
             history = []

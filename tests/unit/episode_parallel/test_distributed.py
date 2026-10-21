@@ -36,6 +36,8 @@ def test_cpu_two_ranks_match_one_rank_for_all_variants(tmp_path):
             log = (tmp_path / str(world) / f"logged/logs/rank-{rank}.log").read_text()
             assert f"rank {rank} ready" in log
     single = torch.load(tmp_path / "1/rank-0.pt", weights_only=True)
+    assert "evo1_groot" in single
+    assert single["evo1_groot"]["counts"] == {"policy": 4}
     assert "aqmem_joint_mixed" in single
     ranks = [torch.load(tmp_path / f"2/rank-{r}.pt", weights_only=True) for r in range(2)]
     # assert_close handles tensors/numbers, not group metadata strings.

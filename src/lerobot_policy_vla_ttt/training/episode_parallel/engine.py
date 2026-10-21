@@ -43,13 +43,22 @@ def backward_episode(policy, events, *, decisions, recipe, backward, preprocess=
             device = next(policy.parameters()).device
             if "observation.state" in frame and len(frame["observation.state"]) != 1:
                 raise ValueError("Microbatch must contain exactly one episode")
-            supervised = torch.tensor([event.supervised], device=device)
-            numerator, valid_count, memory = policy.forward_step(
-                frame,
-                memory,
-                supervision_mask=supervised,
-                write_mask=torch.ones(1, device=device, dtype=torch.bool),
-            )
+            if getattr(getattr(policy, "config", None), "type", None) == "evo1_groot":
+                # Stateless baseline: observations without action supervision have
+                # no effect. Keep the event clock but do not consume flow/dropout RNG.
+                numerator = None
+                if event.supervised:
+                    chunk_mean, info = policy(frame)
+                    valid_count = int(info["active_action_dims"])
+                    numerator = chunk_mean * valid_count
+            else:
+                supervised = torch.tensor([event.supervised], device=device)
+                numerator, valid_count, memory = policy.forward_step(
+                    frame,
+                    memory,
+                    supervision_mask=supervised,
+                    write_mask=torch.ones(1, device=device, dtype=torch.bool),
+                )
             if event.supervised:
                 n = int(valid_count)
                 if n < 1:

@@ -1,6 +1,6 @@
 # Episode 并行训练
 
-独立入口 `python -m lerobot_policy_vla_ttt.training.train_episode_parallel` 支持 MAC、MAG、MAL、AQMem、T²Mem，已合入 master。原 `train_robottt`、`train_titans`、`tbptt.py` 保持独立。
+独立入口 `python -m lerobot_policy_vla_ttt.training.train_episode_parallel` 支持 Evo1-GROOT baseline、MAC、MAG、MAL、AQMem、T²Mem。原 `train_robottt`、`train_titans`、`tbptt.py` 保持独立。
 
 **2026-10-16 图像尺度修复：** 旧版 RoboMME episode 路径遗漏 uint8 图像的 `/255`，导致训练视觉输入饱和。使用该路径的 T2MEM、AQMem、MAC/MAG/MAL 均受影响；请更新后从正常 Stage1 检查点重启 Stage2，不要恢复受影响的训练。LIBERO 默认浮点路径和 Evo1-GROOT 常规训练器不受本次问题影响。影响范围、修复与验证见 [修复记录](experiments/2026-10-16-robomme-episode-image-scale-fix.md)。
 
@@ -173,3 +173,37 @@ B ≤ task 数时任务不重复；B > task 数时各 task 计数相差至多 1�
 后续真实 Stage2 20k 单 GPU 短测已完成 8 步：峰值 allocated/reserved 为 19.46/21.19 GiB，
 本机 RTX PRO 5000 72GB 的 2000 步耗时估计约 63 小时，详见 recipe 文档。
 CPU/Gloo 精确恢复与跨机器资源重定位测试通过；多 GPU CUDA/NCCL 仍未验收。
+
+## 无记忆 baseline 序列训练
+
+纯 Evo1-GROOT 使用同一个 episode 采样器和训练循环，显式指定
+`--architecture evo1_groot` 和 `training_mode: policy`。
+不添加 memory 模块，不交替冻结参数；VLM 与动作头每步一起更新。
+保存的 `pretrained_model` 类型仍为 `evo1_groot`，可直接交给原 baseline 评测。
+
+```bash
+CUDA_VISIBLE_DEVICES=0 uv run --frozen python \
+  -m lerobot_policy_vla_ttt.training.train_episode_parallel \
+  --architecture evo1_groot --benchmark libero \
+  --machine configs/machine.local.toml \
+  --run-name libero-evo1-groot-episode-seed1000 \
+  --recipe configs/training/libero-evo1-groot-episode.json
+```
+
+机器配置的 `assets.initial_checkpoint` 指向 LIBERO baseline 初始权重，
+或显式传入 `--checkpoint /path/to/pretrained_model`；数据与 VLM 路径仍遵循机器配置约定。
+与既有随机 chunk 实验对照时使用相同起始权重。不要默认从已经训练好的
+67% checkpoint 继续训练等价于从相同起点比较。
+新 recipe 为 batch 4、mixed_tasks、H50/E10、2000 次 policy 更新，
+仅作为可运行的起始配置，未声称与原随机 chunk 训练预算等价。
+
+每个 episode 按 E/2 遍历事件，每 E 帧监督一个动作 chunk；无监督事件不调用
+baseline 模型，也不消耗模型随机数。loss 保持有效动作元素均值→episode 均值
+→全局 batch 均值，末尾越界动作通过 mask 排除。TBPTT 分段只控制反向累积边界，
+baseline 不保存跨帧状态。日志中的 events 包括跳过前向的无监督事件，
+比较计算量时同时查看 decisions、supervised_scalars 和实际耗时。
+
+多进程继续使用全局 slot 分片和显式梯度求和；启动方式与上文 Accelerate 示例相同，
+替换 architecture 和 recipe 即可。断点恢复使用同一 recipe 和 world size，
+`--resume` 可自动识别 baseline 检查点。首次初始化 baseline 必须显式指定
+architecture，以保留旧命令默认初始化 T2MEM 的行为。
