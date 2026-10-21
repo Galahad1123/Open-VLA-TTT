@@ -25,15 +25,18 @@ from ..portability import (
 )
 from .episode_parallel.checkpoint import canonical, normalize_saved_recipe
 from .episode_parallel.config import Recipe
+from .episode_parallel.precision import DTYPES, validate_device
 from .train_robottt import ARCHITECTURES
 
 KINDS = ("evo1_groot", "mac", "mag", "mal", "aqmem", "t2mem")
 LIBERO_REVISION = "86958911c0f959db2bbbdb107eb3e17c5f9c798e"
 
 
-def resolve_config(source, architecture, recipe, *, device, overrides=None):
+def resolve_config(source, architecture, recipe, *, device, overrides=None, precision="bf16"):
     if architecture not in KINDS or source.type not in (architecture, "evo1_groot"):
         raise ValueError("Expected evo1_groot or a checkpoint of the selected architecture")
+    if precision not in DTYPES:
+        raise ValueError(f"Unsupported precision: {precision}")
     baseline = architecture == "evo1_groot"
     if baseline and recipe.training_mode != "policy":
         raise ValueError("evo1_groot requires training_mode=policy")
@@ -58,9 +61,9 @@ def resolve_config(source, architecture, recipe, *, device, overrides=None):
         # LeRobot capability checks take a device type, not an indexed device.
         # CUDA's current device is set from Accelerate before model creation.
         device=str(device).split(":")[0],
-        dtype="bfloat16",
+        dtype=DTYPES[precision],
         vlm_dtype="float32",
-        use_amp=True,
+        use_amp=precision != "fp32",
         use_flash_attn=False,
         training_stage="stage2",
         apply_training_stage_defaults=True,
@@ -140,6 +143,11 @@ def main(argv=None):
     parser.add_argument(
         "--stop-after", type=int, help="Stop after this many updates, retaining full schedule"
     )
+    parser.add_argument(
+        "--precision",
+        choices=tuple(DTYPES),
+        help="Default bf16; resume inherits checkpoint precision. V100: fp16 or fp32",
+    )
     parser.add_argument("--cpu", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
@@ -174,6 +182,12 @@ def main(argv=None):
         checkpoint = args.checkpoint or (args.resume / "pretrained_model")
         source = PreTrainedConfig.from_pretrained(checkpoint, local_files_only=True)
         source = relocate_vlm(source, args.vlm_path)
+        saved_precision = {v: k for k, v in DTYPES.items()}.get(source.dtype)
+        args.precision = args.precision or (saved_precision if resume_state else "bf16")
+        if resume_state and args.precision != saved_precision:
+            raise ValueError(
+                "Resume precision mismatch; use --checkpoint for weight-only initialization"
+            )
         portable = resume_state is None or resume_state["identity"].get("version") == 2
         if not args.dry_run and portable:
             source = local_vlm(source)
@@ -220,7 +234,14 @@ def main(argv=None):
             raise ValueError("global_batch_size must be divisible by WORLD_SIZE")
         overrides = json.loads(args.memory_config.read_text()) if args.memory_config else {}
         # CPU here avoids GPU discovery during --dry-run.
-        resolved = resolve_config(source, architecture, recipe, device="cpu", overrides=overrides)
+        resolved = resolve_config(
+            source,
+            architecture,
+            recipe,
+            device="cpu",
+            overrides=overrides,
+            precision=args.precision,
+        )
         info = json.loads((args.dataset_root / "meta/info.json").read_text())
         action_key, action_dim = ("actions", 8) if benchmark == "robomme" else ("action", 7)
         if info["features"][action_key]["shape"] != [action_dim]:
@@ -417,8 +438,14 @@ def _execute_run(
             torch.cuda.set_device(accelerator.device)
             torch.cuda.manual_seed(recipe.seed)
         resolved = resolve_config(
-            source, architecture, recipe, device=accelerator.device, overrides=overrides
+            source,
+            architecture,
+            recipe,
+            device=accelerator.device,
+            overrides=overrides,
+            precision=args.precision,
         )
+        validate_device(resolved.dtype, accelerator.device)
         policy_cls = (
             Evo1GrootPolicy if architecture == "evo1_groot" else ARCHITECTURES[architecture][1]
         )

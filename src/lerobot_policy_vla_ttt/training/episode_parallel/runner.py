@@ -9,11 +9,18 @@ from pathlib import Path
 import torch
 import torch.distributed as dist
 
-from .checkpoint import canonical, load_checkpoint, model_contract, save_checkpoint
+from .checkpoint import (
+    canonical,
+    load_checkpoint,
+    model_contract,
+    restore_rng,
+    rng_state,
+    save_checkpoint,
+)
 from .data import EpisodeSampler, MixedTaskEpisodeSampler
 from .engine import backward_episode, episode_rng
 from .optim import PhaseOptimizers
-from .runtime import broadcast_model, collective_error, distributed, synchronize_gradients
+from .runtime import broadcast_model, collective_error, distributed
 from .streams import ChunkStreamSampler, backward_chunks, prepare_chunks
 
 COUNTERS = ("episodes", "events", "decisions", "supervised_scalars")
@@ -40,7 +47,7 @@ def run(
     if accelerator.gradient_accumulation_steps != 1 or accelerator.mixed_precision != "no":
         raise ValueError(
             'Use Accelerator(mixed_precision="no", gradient_accumulation_steps=1); '
-            "the policy owns BF16 autocast and the engine owns normalization"
+            "the policy owns autocast and the engine owns normalization"
         )
     chunk_updates = recipe.update_unit == "chunk"
     if chunk_updates and (policy.config.type != "evo1_groot" or recipe.training_mode != "policy"):
@@ -57,6 +64,13 @@ def run(
         seed=recipe.seed,
         global_batch_size=recipe.global_batch_size,
     )
+    from .precision import validate_device
+
+    validate_device(policy.config.dtype, accelerator.device)
+    if policy.config.dtype == "float16" and any(
+        p.is_floating_point() and p.dtype != torch.float32 for p in policy.parameters()
+    ):
+        raise ValueError("FP16 autocast requires FP32 model parameters (use policy.float())")
     policy.to(accelerator.device)
     broadcast_model(policy)
     control = PhaseOptimizers(policy, recipe)
@@ -101,13 +115,18 @@ def run(
     collective_error(error, accelerator.device)
     accelerator.wait_for_everyone()
     start_time = time.monotonic()
+    retries = 0
     while step < end:
         started = time.monotonic()
         local = dict.fromkeys(("loss_sum", *COUNTERS), 0.0)
         error = None
         try:
             phase = control.begin(step)
-            global_samples = sampler.batch(step)
+            if retries == 0:
+                global_samples = sampler.batch(step)
+                attempt_rng = rng_state(accelerator.device)
+            else:
+                restore_rng(attempt_rng, accelerator.device)
             task_counts = Counter(source.episodes[s.episode_id].task for s in global_samples)
             local_samples = global_samples[accelerator.process_index :: accelerator.num_processes]
             prepared = prepare_chunks(policy, source, local_samples, pre) if chunk_updates else None
@@ -128,7 +147,7 @@ def run(
                     policy,
                     prepared,
                     global_valid_count=global_valid_count,
-                    backward=accelerator.backward,
+                    backward=control.precision.backward,
                 )
                 del prepared
             else:
@@ -139,7 +158,7 @@ def run(
                             source.events(sample.episode_id, seed=sample.seed),
                             decisions=source.decision_count(sample.episode_id),
                             recipe=recipe,
-                            backward=accelerator.backward,
+                            backward=control.precision.backward,
                             preprocess=pre,
                         )
                     del memory
@@ -148,7 +167,18 @@ def run(
         except Exception as exc:
             error = f"Local episode computation at step {step} failed: {type(exc).__name__}: {exc}"
         collective_error(error, accelerator.device)
-        synchronize_gradients(policy)
+        if not control.precision.prepare_gradients(policy):
+            retries += 1
+            if accelerator.is_main_process:
+                print(
+                    f"FP16 overflow at step {step}; retry {retries}/16, "
+                    f"loss_scale={control.precision.scale}",
+                    flush=True,
+                )
+            if retries >= 16:
+                raise FloatingPointError("16 consecutive FP16 overflows; try --precision fp32")
+            continue
+        retries = 0
         error = None
         try:
             grad_norm = control.step()
@@ -169,6 +199,8 @@ def run(
         metrics.update(
             step=step,
             phase=phase,
+            loss_scale=control.precision.scale,
+            skipped_updates=control.precision.skipped_updates,
             phase_updates=control.counts.copy(),
             global_task_count=len(task_counts),
             global_task_counts=dict(task_counts),

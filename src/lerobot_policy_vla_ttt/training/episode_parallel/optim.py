@@ -4,6 +4,8 @@ import math
 
 import torch
 
+from .precision import OuterPrecision
+
 
 def parameter_groups(policy, phase, recipe):
     if phase == "joint":
@@ -51,6 +53,7 @@ def parameter_groups(policy, phase, recipe):
 class PhaseOptimizers:
     def __init__(self, policy, recipe):
         self.policy, self.recipe = policy, recipe
+        self.precision = OuterPrecision(policy.config.dtype)
         if policy.config.type == "evo1_groot" and recipe.training_mode != "policy":
             raise ValueError("evo1_groot requires policy training")
         self.optimizers = {
@@ -105,17 +108,20 @@ class PhaseOptimizers:
             parameters, self.recipe.grad_clip, error_if_nonfinite=True
         )
         self.optimizers[self.active].step()
+        self.precision.success()
         self.counts[self.active] += 1
         self.active = None
         return float(norm)
 
     def state_dict(self):
         return {
+            "precision": self.precision.state_dict(),
             "counts": self.counts.copy(),
             "optimizers": {k: v.state_dict() for k, v in self.optimizers.items()},
         }
 
     def load_state_dict(self, state):
+        self.precision.load_state_dict(state.get("precision"))
         counts = state["counts"]
         step = sum(counts.values())
         expected = {

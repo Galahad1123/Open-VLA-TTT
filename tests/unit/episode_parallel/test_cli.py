@@ -120,7 +120,10 @@ def test_dry_run_does_not_load_weights_or_create_output(tmp_path):
 @pytest.mark.parametrize(
     "benchmark,joint", [("libero", False), ("robomme", False), ("libero", True)]
 )
-def test_cli_real_checkpoint_processors_and_resume(monkeypatch, tmp_path, benchmark, joint):
+@pytest.mark.parametrize("precision", ["bf16", "fp16", "fp32"])
+def test_cli_real_checkpoint_processors_and_resume(
+    monkeypatch, tmp_path, benchmark, joint, precision
+):
     import torch
     from lerobot.configs.types import FeatureType, PolicyFeature
     from lerobot.datasets import lerobot_dataset
@@ -256,6 +259,8 @@ def test_cli_real_checkpoint_processors_and_resume(monkeypatch, tmp_path, benchm
     main(
         [
             "--cpu",
+            "--precision",
+            precision,
             "--benchmark",
             benchmark,
             "--architecture",
@@ -272,11 +277,28 @@ def test_cli_real_checkpoint_processors_and_resume(monkeypatch, tmp_path, benchm
             "1",
         ]
     )
+    with pytest.raises(SystemExit):
+        main(
+            [
+                "--cpu",
+                "--resume",
+                str(tmp_path / "first/step-00000001"),
+                "--machine",
+                str(machine),
+                "--run-name",
+                "wrong-precision",
+                "--precision",
+                "fp32" if precision != "fp32" else "fp16",
+                "--dry-run",
+            ]
+        )
     # Same transform definitions in a different order change seeded sampling.
     # Resume identity must reject that change, even though dict equality would not.
-    import pytest
-
     saved_first = torch.load(tmp_path / "first/step-00000001/training.pt", weights_only=False)
+    assert (
+        saved_first["control"]["precision"]["dtype"]
+        == {"bf16": "bfloat16", "fp16": "float16", "fp32": "float32"}[precision]
+    )
     if not joint:
         legacy = dict(saved_first, recipe=dict(saved_first["recipe"]))
         for key in ("training_mode", "sampling_mode"):

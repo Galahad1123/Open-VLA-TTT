@@ -72,12 +72,14 @@ class Evo1GrootPolicy(Evo1Policy):
 
     @property
     def _amp_enabled(self):
-        return self.config.dtype == "bfloat16" and self._device.type == "cuda"
+        return self.config.dtype in {"bfloat16", "float16"} and self._device.type == "cuda"
 
     def _maybe_autocast(self):
         # Explicitly disable an enclosing autocast for float32 (or CPU). Generic
         # eval can otherwise enter fp16 based on the legacy use_amp flag.
-        return torch.autocast(self._device.type, dtype=torch.bfloat16, enabled=self._amp_enabled)
+        return torch.autocast(
+            self._device.type, dtype=getattr(torch, self.config.dtype), enabled=self._amp_enabled
+        )
 
     def init_rtc_processor(self):
         if self.config.rtc_config is not None:

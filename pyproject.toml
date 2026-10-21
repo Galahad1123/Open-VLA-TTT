@@ -53,6 +53,7 @@ only-include = [
     "packages/eval-client/src", "packages/eval-client/pyproject.toml",
     "environments/libero/pyproject.toml", "environments/libero/uv.lock",
     "environments/robomme/pyproject.toml", "environments/robomme/uv.lock",
+    "environments/v100/pyproject.toml", "environments/v100/uv.lock",
 ]
 
 [tool.pytest.ini_options]

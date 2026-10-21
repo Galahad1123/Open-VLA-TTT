@@ -48,5 +48,39 @@ def test_cpu_two_ranks_match_one_rank_for_all_variants(tmp_path):
             for item in (single, *ranks)
         ]
         assert groups[0] == groups[1] == groups[2]
+        precision = [item[case]["control"].pop("precision") for item in (single, *ranks)]
+        assert precision[0] == precision[1] == precision[2]
     torch.testing.assert_close(ranks[0], ranks[1], atol=0, rtol=0)
     torch.testing.assert_close(single, ranks[0], atol=2e-6, rtol=2e-4)
+
+
+def test_fp16_cpu_two_ranks_overflow_retry_and_resume(tmp_path):
+    root = Path(__file__).resolve().parents[3]
+    env = dict(
+        os.environ,
+        CUDA_VISIBLE_DEVICES="",
+        OMP_NUM_THREADS="1",
+        MKL_NUM_THREADS="1",
+        OPENBLAS_NUM_THREADS="1",
+        HF_HUB_OFFLINE="1",
+        TRANSFORMERS_OFFLINE="1",
+        PYTHONPATH=f"{root / 'src'}:{root / 'tests/unit'}",
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "torch.distributed.run",
+            "--standalone",
+            "--nproc-per-node=2",
+            "-m",
+            "episode_parallel.precision_probe",
+            str(tmp_path),
+        ],
+        env=env,
+        cwd=root,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
