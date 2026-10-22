@@ -55,3 +55,11 @@ uv run --project environments/v100 --frozen python -m torch.distributed.run \
 - `--resume` 默认继承 checkpoint 精度，拒绝更改精度。旧 BF16/FP32 checkpoint 没有 scaler 状态仍可恢复；FP16 checkpoint 缺少此状态会拒绝恢复。要将 BF16 权重用于 FP16 新实验，使用 `--checkpoint .../pretrained_model --precision fp16`，这会新建优化器和训练进度。
 
 本地 CPU/Gloo 测试覆盖控制流与数值缩放，不证明真实 V100 的 FP16 前向稳定性、显存峰值或八卡加速比。真实权重若在 FP16 前向出现溢出，应先用 `--precision fp32` 对照再定位敏感模块。
+
+## 随机 chunk 与指定任务子集
+
+RoboMME evo1-groot 随机 chunk 多卡训练使用独立入口 `training.train_task_subset`。
+它支持原始 episode ID 子集、全局 batch 换算及 `--precision fp16`，并使用
+Accelerate 自带的 GradScaler；不要套用上面 episode trainer 的自定义 scaler。
+完整 recipe、四卡短测/正式训练命令及验证边界见
+[随机 chunk 子集训练说明](robomme-subset-training.md)。
