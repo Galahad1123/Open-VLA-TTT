@@ -132,11 +132,35 @@ def inspect_source(root):
     return np.flatnonzero(~demo), np.asarray(lengths), stats, report
 
 
+def select_execution_episodes(indices, lengths, episodes):
+    """Select original episode IDs without changing source action-query boundaries."""
+    ids = list(range(len(lengths))) if episodes is None else list(episodes)
+    if (
+        not ids
+        or any(type(ep) is not int or not 0 <= ep < len(lengths) for ep in ids)
+        or len(set(ids)) != len(ids)
+    ):
+        raise ValueError("Expected unique, in-range integer episode IDs")
+    ids.sort()
+    ends = np.concatenate(([0], np.cumsum(lengths)))
+    selected = np.concatenate([indices[ends[ep] : ends[ep + 1]] for ep in ids])
+    return selected, lengths[ids], ids
+
+
 class RoboMMEControlDataset(Dataset):
-    def __init__(self, root, chunk_size=20, revision=ROBOMME_REVISION):
+    def __init__(self, root, chunk_size=20, revision=ROBOMME_REVISION, episodes=None):
         from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
         self.indices, lengths, stats, self.report = inspect_source(root)
+        self.indices, lengths, self.source_episode_ids = select_execution_episodes(
+            self.indices, lengths, episodes
+        )
+        # Retain full execution-only normalization statistics across init comparisons.
+        self.report.update(
+            selected_episode_ids=self.source_episode_ids,
+            selected_execution_frames=len(self.indices),
+            normalization_scope="full_training_execution_frames",
+        )
         self.source = LeRobotDataset(
             "lerobot/robomme",
             root=root,
@@ -151,6 +175,7 @@ class RoboMMEControlDataset(Dataset):
             KEYS[key]: copy.deepcopy(self.source.meta.features[key]) for key in KEYS
         }
         self.meta.info.total_frames = len(self.indices)
+        self.meta.info.total_episodes = len(lengths)
         self.meta.stats = stats
         ends = np.cumsum(lengths)
         self.meta.episodes = {
@@ -178,10 +203,8 @@ class RoboMMEControlDataset(Dataset):
 
 
 def make_control_datasets(cfg):
-    if cfg.dataset.streaming or cfg.dataset.episodes is not None or cfg.dataset.eval_split != 0:
-        raise ValueError(
-            "RoboMME baseline requires all training episodes, no streaming or custom split"
-        )
+    if cfg.dataset.streaming or cfg.dataset.eval_split != 0:
+        raise ValueError("RoboMME baseline supports no streaming or custom split")
     if cfg.dataset.image_transforms.enable or cfg.rename_map or cfg.dataset.use_imagenet_stats:
         raise ValueError(
             "RoboMME control view handles naming; use no augmentation/rename/imagenet stats"
@@ -191,7 +214,7 @@ def make_control_datasets(cfg):
     if cfg.policy.type != "evo1_groot" or cfg.policy.n_obs_steps != 1:
         raise ValueError("This entry point is for the memoryless Evo1-GROOT baseline")
     return RoboMMEControlDataset(
-        cfg.dataset.root, cfg.policy.chunk_size, cfg.dataset.revision
+        cfg.dataset.root, cfg.policy.chunk_size, cfg.dataset.revision, cfg.dataset.episodes
     ), None
 
 

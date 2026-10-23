@@ -9,6 +9,7 @@ from lerobot_policy_vla_ttt.baselines.robomme_data import (
     RoboMMEControlDataset,
     inspect_source,
     make_control_datasets,
+    select_execution_episodes,
 )
 
 
@@ -45,12 +46,61 @@ def test_execution_view_keeps_action_mask_and_drops_privileged_columns():
 
 
 def test_control_factory_refuses_resplitting_or_streaming():
-    for streaming, episodes, split in [(True, None, 0), (False, [0], 0), (False, None, 0.1)]:
+    for streaming, episodes, split in [(True, None, 0), (False, None, 0.1)]:
         cfg = SimpleNamespace(
             dataset=SimpleNamespace(streaming=streaming, episodes=episodes, eval_split=split)
         )
-        with pytest.raises(ValueError, match="all training episodes"):
+        with pytest.raises(ValueError, match="streaming or custom split"):
             make_control_datasets(cfg)
+
+
+def test_subset_preserves_source_indices_and_compacts_sampler_boundaries():
+    indices = np.array([1, 2, 5, 7, 8, 9])
+    chosen, lengths, ids = select_execution_episodes(indices, np.array([2, 1, 3]), [2, 0])
+    assert chosen.tolist() == [1, 2, 7, 8, 9]
+    assert lengths.tolist() == [2, 3]
+    assert ids == [0, 2]
+    assert indices.tolist() == [1, 2, 5, 7, 8, 9]
+
+
+@pytest.mark.parametrize("episodes", [[], [0, 0], [-1], [3], [True], [1.5]])
+def test_subset_rejects_invalid_ids(episodes):
+    with pytest.raises(ValueError, match="episode"):
+        select_execution_episodes(np.arange(6), np.array([2, 1, 3]), episodes)
+
+
+def test_subset_view_keeps_full_statistics_and_original_source(monkeypatch):
+    from lerobot.datasets import lerobot_dataset
+
+    from lerobot_policy_vla_ttt.baselines import robomme_data
+
+    stats = {"action": {"min": np.zeros(8)}}
+    source = SimpleNamespace(
+        meta=SimpleNamespace(
+            info=SimpleNamespace(features={}, total_frames=10, total_episodes=3),
+            features={key: {} for key in robomme_data.KEYS},
+        )
+    )
+    monkeypatch.setattr(
+        robomme_data,
+        "inspect_source",
+        lambda root: (np.array([1, 2, 5, 7, 8, 9]), np.array([2, 1, 3]), stats, {}),
+    )
+    calls = []
+
+    def load_source(*args, **kwargs):
+        calls.append(kwargs)
+        return source
+
+    monkeypatch.setattr(lerobot_dataset, "LeRobotDataset", load_source)
+    view = RoboMMEControlDataset("unused", episodes=[2, 0])
+    assert view.meta.episodes == {"dataset_from_index": [0, 2], "dataset_to_index": [2, 5]}
+    assert view.meta.stats is stats
+    assert view.source_episode_ids == [0, 2]
+    assert view.num_episodes == 2 and view.num_frames == 5
+    assert view.meta.info.total_episodes == 2
+    assert source.meta.info.total_episodes == 3
+    assert "episodes" not in calls[0]
 
 
 def test_control_view_sampler_does_not_sample_demo_holes():
