@@ -1,6 +1,7 @@
 # RMBench Evo1-GROOT baseline
 
-实现位于 `feat/rmbench-baseline`。训练与真实数据短测已验证；**仿真环境及真实闭环尚未验收**。
+实现位于 `feat/rmbench-baseline`。训练与真实数据短测已验证；独立仿真环境、官方专家和一个500步 server-client episode 已实际通过链路验收。
+安装见 [环境说明](../environments/rmbench/README.md)，证据见 [环境验收](experiments/2026-10-26-rmbench-environment.md)。
 不要将短训模型的输出当作有效操作能力。主仓库和其他 worktree 未修改。
 
 ## 数据与资源
@@ -20,8 +21,8 @@ cp configs/machine.example.toml configs/machine.local.toml
 ```
 
 默认 `https://hf-mirror.com`；本机镜像 API 返回 403 时可加
-`--endpoint https://huggingface.co`。目录元数据和 HEAD 可经过终端代理，**文件正文
-始终使用清空代理的连接**，重定向后的 CDN 同样如此。不改系统代理配置。
+`--endpoint https://huggingface.co`。目录元数据和 HEAD 可经过终端代理，**大文件正文始终绕过代理**，重定向后的 CDN 同样如此。小于等于2 MiB 的非 LFS 文件可回退到官方小文件连接。不改系统代理配置。
+`--manifest` 接收预览输出的 revision/files 对象；下载结束保存的文件列表仅作校验记录，不能直接作为该参数输入。
 下载 zip 后解压到 `rmbench_raw/data/<task>/demo_clean/`，检查内部有
 `data/episode0.hdf5` 与 `instructions/episode0.json`，不要重复套一层目录。
 

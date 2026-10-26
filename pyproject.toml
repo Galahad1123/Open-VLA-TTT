@@ -55,6 +55,11 @@ only-include = [
     "environments/libero/pyproject.toml", "environments/libero/uv.lock",
     "environments/robomme/pyproject.toml", "environments/robomme/uv.lock",
     "environments/rmbench/README.md",
+    "environments/rmbench/pyproject.toml", "environments/rmbench/uv.lock",
+    "environments/rmbench/setup.sh", "environments/rmbench/install_cuda.py",
+    "environments/rmbench/cuda-packages.json", "environments/rmbench/install_oidn.py",
+    "environments/rmbench/oidn-package.json", "environments/rmbench/patch_dependencies.py",
+    "environments/rmbench/prepare_runtime.py", "environments/rmbench/preflight.py",
 ]
 
 [tool.pytest.ini_options]

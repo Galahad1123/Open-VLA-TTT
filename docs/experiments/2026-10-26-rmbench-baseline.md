@@ -60,3 +60,7 @@
 `lineage-stage2/checkpoints/000002/pretrained_model`（约2.7GiB）。
 已清理本次生成的其余约30.71GiB权重/优化器状态；保留小型配置与日志，
 清理过的测试目录不再是可恢复训练的完整检查点。
+
+## 后续环境验收
+
+本记录中的 nvcc/真实仿真阻塞已解决，详见 [独立环境实际验收](2026-10-26-rmbench-environment.md)。

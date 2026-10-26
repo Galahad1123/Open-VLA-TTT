@@ -1,37 +1,39 @@
-# RMBench 仿真环境
+# RMBench 独立仿真环境
 
-policy 使用项目 `.venv`；仿真必须独立，不能在 policy 环境执行官方安装脚本。
-固定上游 `7d1cdfc7661c273a7a5c5f6126e2d1a7f0a3f4b7`，CuRobo `v0.7.8`。
+policy 使用项目 `.venv`，仿真使用本目录 `.venv`。本机 RTX PRO 5000 Blackwell 已实际验证专家轨迹和 server-client 完整 episode；详见 [环境验收记录](../../docs/experiments/2026-10-26-rmbench-environment.md)。
 
-官方安装说明及脚本位于上游 `INSTALLATION.md`、`scripts/_install.sh`。
-它需要 Python 3.10、SAPIEN 3.0.0b1、mplib 0.2.1、Open3D 0.18.0、
-PyTorch3D、CuRobo，以及 CUDA 编译器。GPU 驱动不包含 `nvcc`。
-官方 PyTorch 2.4.1 配方不能直接视为已验证支持 Blackwell；在该显卡上应先验证
-兼容的 PyTorch/CUDA/CuRobo 组合，再锁定环境。当前没有经过真实验证的替代锁文件。
+## 安装
 
-准备独立 checkout 和 Python 环境（路径可自行选择）：
+从仓库根目录运行：
 
 ```bash
-git clone https://github.com/RoboTwin-Platform/RMBench "$RMBENCH_RUNTIME"
-git -C "$RMBENCH_RUNTIME" checkout 7d1cdfc7661c273a7a5c5f6126e2d1a7f0a3f4b7
-uv venv --python 3.10 "$RMBENCH_VENV"
-source "$RMBENCH_VENV/bin/activate"
-export PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
-command -v nvcc
+bash environments/rmbench/setup.sh
+# 在 machine TOML 中配置 assets.rmbench_source 和 assets.rmbench_assets。
+environments/rmbench/.venv/bin/python environments/rmbench/prepare_runtime.py \
+  --machine configs/machine.local.toml --runtime environments/rmbench/runtime
+
+environments/rmbench/.venv/bin/python environments/rmbench/preflight.py \
+  --runtime environments/rmbench/runtime --task put_back_block --seed 100000 \
+  --output artifacts/rmbench-environment/expert.json
 ```
 
-先确保 CUDA 工具链和显卡架构相容，再在该环境按官方脚本安装。
-大体积 wheel 下载请清除 HTTP_PROXY/HTTPS_PROXY/ALL_PROXY 及小写变量，
-避免终端代理传输大文件。不要把缺少 CuRobo 时跳过专家筛选作为正式协议。
-将下载资源的 `embodiments`、`objects` 目录链接到 runtime 的 `assets/` 下；
-不要修改共享的上游源码。每个运行进程使用专属 runtime，避免规划器的临时文件冲突。
+安装脚本固定自己的 UV_PROJECT_ENVIRONMENT，Python 包通过清华源下载；大文件传输清除代理。CUDA 编译工具链安装在本目录 toolkit，无需修改系统 CUDA 或驱动。CUDA 包和 OIDN 压缩包有 SHA256 校验。OIDN 官方直连失败时使用 GitHub 下载镜像，仍校验同一散列。
 
-最后在仿真环境安装本仓库的轻量客户端（不依赖 LeRobot）：
+实际组合：Python 3.11、PyTorch 2.9.1+cu128、CUDA Toolkit 12.8、SAPIEN 3.0.0b1、mplib 0.2.1、Open3D 0.18、CuRobo 0.7.8（d64c4b005459db10c5dd867d8b30a87d5bda9bdb）。uv.lock 固定 Python 依赖；CuRobo 从固定源码单独编译，installed-freeze.txt 记录最终环境。
+
+上游 RMBench 固定 7d1cdfc7661c273a7a5c5f6126e2d1a7f0a3f4b7。相对官方旧环境，为兼容 Blackwell，采用上述 Python/PyTorch/CUDA 组合，并将 SAPIEN 的 OIDN 更新为 2.3.3；[官方变更记录](https://github.com/RenderKit/oidn/blob/v2.3.3/CHANGELOG.md)明确加入 Blackwell 支持。原 2.0.1 无法创建该显卡上的 CUDA 去噪设备。保留官方渲染器和物理设置。RGB 流程不使用点云，不安装可选 PyTorch3D；上游打印 missing pytorch3d 不影响本次 RGB 路径。
+
+patch_dependencies.py 应用官方 SAPIEN UTF-8 和 mplib 补丁，采用原子替换，避免改动 uv 的共享硬链接缓存。prepare_runtime.py 私有化机器人配置，按官方脚本改写本机 URDF 路径，网格和物体资源共享只读。每个并发评测进程使用独立 runtime。
+
+## 闭环评测
+
+在 policy 环境启动 vla-ttt-serve（benchmark=rmbench，implementation=evo1_groot）后：
 
 ```bash
-uv pip install --python "$RMBENCH_VENV/bin/python" -e "$VLA_TTT_ROOT/packages/eval-client"
-"$RMBENCH_VENV/bin/python" -m vla_ttt_eval.rmbench_runner --help
+environments/rmbench/.venv/bin/python -m vla_ttt_eval.rmbench_runner \
+  --source environments/rmbench/runtime --task put_back_block \
+  --uri ws://127.0.0.1:18330 --output artifacts/rmbench-eval \
+  --seed 0 --episodes 1 --max-candidates 10
 ```
 
-实际安装完成后保存 `pip freeze`、CUDA 版本及上游 git/submodule commit。
-当前实现交付不包含已通过真实 rollout 的仿真环境；详见实验记录。
+保留官方专家筛选，默认输出 H.264/yuv420p 视频。正式评测参数与训练入口见 [baseline 文档](../../docs/rmbench-baseline.md)。本次只验证一个任务的专家和一个完整策略 episode，不代表九任务性能验收。

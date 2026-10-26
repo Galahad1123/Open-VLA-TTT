@@ -1,0 +1,74 @@
+[
+  {
+    "name": "cuda-nvcc-tools",
+    "path": "linux-64/cuda-nvcc-tools-12.8.93-0.conda",
+    "sha256": "06de41a38e95df52dfa1cfa331b1db12ff72b217b09f00daef3e7562842307de",
+    "size": 25679347
+  },
+  {
+    "name": "cuda-nvcc-dev_linux-64",
+    "path": "noarch/cuda-nvcc-dev_linux-64-12.8.93-0.conda",
+    "sha256": "e0ad50b1841ad3969aa19a9358aba6a72b85c00f6f5e4abd43d911e23ae9f7df",
+    "size": 13247399
+  },
+  {
+    "name": "cuda-nvvm-impl",
+    "path": "linux-64/cuda-nvvm-impl-12.8.93-0.conda",
+    "sha256": "f000a6f3153b5e25546b576353ac9564caa5c7c63373491103f088bab0f4f794",
+    "size": 21773749
+  },
+  {
+    "name": "cuda-nvvm-dev_linux-64",
+    "path": "noarch/cuda-nvvm-dev_linux-64-12.8.93-0.conda",
+    "sha256": "3b353611e0b895f697142097cd0aa14e1d6aa135ce81676d5e201adfb532287f",
+    "size": 17304
+  },
+  {
+    "name": "cuda-crt-tools",
+    "path": "linux-64/cuda-crt-tools-12.8.93-0.conda",
+    "sha256": "7b2189252fdb1892cf6ebd14058bf292ec843b261a2d45aa1d8d36d3600a94b4",
+    "size": 19216
+  },
+  {
+    "name": "cuda-crt-dev_linux-64",
+    "path": "noarch/cuda-crt-dev_linux-64-12.8.93-0.conda",
+    "sha256": "f19a2c2282ff8407af89c79420a1204c54b80884fde8d54135920357abd7572a",
+    "size": 84148
+  },
+  {
+    "name": "cuda-cudart-dev_linux-64",
+    "path": "noarch/cuda-cudart-dev_linux-64-12.8.90-0.conda",
+    "sha256": "5c0ff9456d2d0c39041ac7e1e4408508d61413517ba3162c953113b573da9d8e",
+    "size": 381830
+  },
+  {
+    "name": "cuda-cudart-static_linux-64",
+    "path": "noarch/cuda-cudart-static_linux-64-12.8.90-0.conda",
+    "sha256": "ac6513f0b9790695c715865b2cbc5ddfc670e98c16a8a2e5f46899da24811143",
+    "size": 980032
+  },
+  {
+    "name": "cuda-cudart_linux-64",
+    "path": "noarch/cuda-cudart_linux-64-12.8.90-0.conda",
+    "sha256": "e4bbba74a1a3dc6d2eed22e99eec02c11bd954b19152329618a7486b779b0e6e",
+    "size": 188018
+  },
+  {
+    "name": "cuda-driver-dev_linux-64",
+    "path": "noarch/cuda-driver-dev_linux-64-12.8.90-0.conda",
+    "sha256": "639177902c15b8e75e8c48fe0ff0a4bb29648b1752a3819711d25a7de9d0078e",
+    "size": 31649
+  },
+  {
+    "name": "cuda-cccl_linux-64",
+    "path": "linux-64/cuda-cccl_linux-64-12.8.90-0.conda",
+    "sha256": "cbde774232656eafafe8fc28419b8b71948f5bab46bcc9c351482624c4c99c83",
+    "size": 1060399
+  },
+  {
+    "name": "cuda-nvvm-tools",
+    "path": "linux-64/cuda-nvvm-tools-12.8.93-0.conda",
+    "sha256": "08965ff982a2b7d986a06c69223a21f5a3b115c059c382455e87a824084ea08f",
+    "size": 24653477
+  }
+]

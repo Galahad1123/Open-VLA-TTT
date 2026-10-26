@@ -32,7 +32,7 @@
 **Interfaces:** 固定 TASKS、UPSTREAM_REVISION；`resolve_tasks(names)`；machine 新增 rmbench_source/rmbench_assets/rmbench_dataset/rmbench_raw。
 - [x] 核对数据/schema/相机/动作和镜像清单。
 - [x] 测试任务集合、未知/重复任务和可迁移路径，先失败后实现。
-- [ ] 下载最小真实样本，检查数据与资源体积；提交协议与配置。
+- [x] 下载最小真实样本，检查数据与资源体积；提交协议与配置。
 
 ### Task 2: 数据转换
 
@@ -40,7 +40,7 @@
 **Interfaces:** `prepare(source, raw, output, tasks, ...)`，输出 LeRobot 数据和 `preparation.json`。
 - [x] 先用小 HDF5 测试官方图像解码、动作对齐、任务语言、轨迹边界。
 - [x] 调用固定版本官方 codec，转换时保存原始轨迹映射和协议身份，不使用特权子任务。
-- [ ] 真实样本转换并读取；提交。
+- [x] 真实样本转换并读取；提交。
 
 ### Task 3: 单/多任务训练及分组优化器
 
@@ -49,26 +49,28 @@
 - [x] 测试冻结、分组 LR、采样、预算、阶段切换及配置身份，先失败后实现。
 - [x] 保留已有默认优化器行为，新增可选 VLM LR；沿用 LeRobot trainer/checkpoint。
 - [x] 输出解析后的预算和每任务采样预期，提供保守初始预算及 uniform-LR 对照。
-- [ ] 实际数据短训、重载、恢复；提交。
+- [x] 实际数据短训、重载、恢复；提交。
 
 ### Task 4: 官方仿真协议与 server-client
 
 **Files:** `packages/eval-client/src/vla_ttt_eval/rmbench.py`, `evaluation/policy.py`, `evaluation/server.py`, `environments/rmbench/`, `tests/unit/test_rmbench_eval.py`。
 **Interfaces:** 14 维关节目标及状态、三路 RGB，使用官方 task setup/play_once/check_success/take_action；协议明确 seed 与成功计数。
-- [ ] 测试观测/动作 schema、reset、错误及 H264 编码，先失败后实现。
+- [x] 测试观测/动作 schema、reset、错误及 H264 编码，先失败后实现。
 - [x] 扩展 benchmark 路由，保留旧基准校验；记录逐 episode JSONL，默认视频。
-- [ ] 安装独立环境，先回放真实演示，再用短训模型 server-client rollout；提交。
+- [x] 安装独立环境，运行官方专家，再用短训模型 server-client rollout；提交。
 
 ### Task 5: 可迁移文档、回归与审阅
 
 **Files:** `docs/rmbench-baseline.md`, `docs/experiments/2026-10-26-rmbench-baseline.md`。
 - [x] 记录下载、安装、单/多任务训练、评测、分发及版本复现命令。
 - [x] 运行已有相关回归与新测试，记录真实验证范围，不将 mock 当真实验证。
-- [ ] 全分支独立审阅，修复重要问题，提交并报告命令与限制。
+- [x] 全分支独立审阅，修复重要问题，提交并报告命令与限制。
 
 ## 当前验收状态（2026-10-26）
 
 已完成真实数据转换、两阶段GPU短训、检查点重载/恢复、客户端协议与H264测试。
 独立审阅的检查点来源和分片/合并问题已修正，相关回归55项通过。
-Task 4 的真实仿真安装、专家回放和闭环尚未完成，不能将整个计划标记完成。
+Task 4 已完成独立环境安装、真实官方专家和短训策略500步闭环，H.264视频全片解码通过。
+后续环境审阅的重要隔离问题已修复。证据见 `docs/experiments/2026-10-26-rmbench-environment.md`。
+完整九任务训练数据下载及正式长训练不属于本次短测验收。
 详见 `docs/experiments/2026-10-26-rmbench-baseline.md` 的证据及裁定记录。
