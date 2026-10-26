@@ -153,3 +153,5 @@ git pull --ff-only
 
 训练完成后按[六任务子集评测指南](../robomme-subset-evaluation.md)安装独立仿真环境，
 使用固定训练 episode 和验证场景条件进行串行评测，保存视频、阶段进展与 HTML 报告。
+
+新实验请参考[相对动作与官方式增强配方](2026-10-26-robomme-official-recipe.md)；本页仍记录旧配方。

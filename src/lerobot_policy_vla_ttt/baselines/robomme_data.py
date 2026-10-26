@@ -9,6 +9,7 @@ import argparse
 import copy
 import hashlib
 import json
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -27,8 +28,67 @@ KEYS = {
 }
 
 
-def inspect_source(root):
+def delta_chunk_statistics(state, actions, lengths, chunk_size):
+    """Exact full-population quantiles, bounded to one disk-backed scalar channel.
+
+    Every execution anchor contributes H targets, including repeated final actions.
+    Only the seven arm coordinates are relative; gripper remains absolute.
+    Temporary scratch lives outside the read-only source and is always removed.
+    """
+    if chunk_size < 1 or sum(lengths) != len(state) or state.shape != actions.shape:
+        raise ValueError("Invalid execution lengths, action shape or chunk size")
+    result = {}
+    for key, values in ((KEYS["state"], state), (KEYS["actions"], actions)):
+        result[key] = {name: [] for name in ("min", "max", "mean", "std", "q01", "q99")}
+        result[key]["count"] = np.array([len(values) * (chunk_size if key == "action" else 1)])
+    with tempfile.TemporaryDirectory(prefix="robomme-stats-") as scratch:
+        values = np.memmap(
+            Path(scratch) / "channel.f32",
+            mode="w+",
+            dtype=np.float32,
+            shape=(len(actions) * chunk_size,),
+        )
+        for dim in range(state.shape[1]):
+            offset = 0
+            for length in lengths:
+                for begin in range(offset, offset + length, 4096):
+                    end = min(begin + 4096, offset + length)
+                    targets = np.minimum(
+                        np.arange(begin, end)[:, None] + np.arange(chunk_size), offset + length - 1
+                    )
+                    chunk = actions[targets, dim].copy()
+                    if dim < 7:
+                        chunk -= state[begin:end, dim, None]
+                    values[begin * chunk_size : end * chunk_size] = chunk.ravel()
+                offset += length
+            for key, channel in ((KEYS["state"], state[:, dim].copy()), ("action", values)):
+                target = result[key]
+                target["min"].append(float(channel.min()))
+                target["max"].append(float(channel.max()))
+                target["mean"].append(float(channel.mean(dtype=np.float64)))
+                # NumPy std allocates a full residual vector: accumulate in bounded blocks.
+                mean = target["mean"][-1]
+                squared = sum(
+                    float(
+                        np.square(np.asarray(channel[i : i + 65536], dtype=np.float64) - mean).sum()
+                    )
+                    for i in range(0, len(channel), 65536)
+                )
+                target["std"].append((squared / len(channel)) ** 0.5)
+                quantiles = np.quantile(channel, [0.01, 0.99], overwrite_input=True)
+                target["q01"].append(float(quantiles[0]))
+                target["q99"].append(float(quantiles[1]))
+        del values
+    return {
+        key: {name: np.asarray(value) for name, value in fields.items()}
+        for key, fields in result.items()
+    }
+
+
+def inspect_source(root, action_representation="absolute", chunk_size=20):
     """Validate all numeric rows, demo boundaries and referenced local files."""
+    if action_representation not in ("absolute", "delta_joint"):
+        raise ValueError("Unknown RoboMME action representation")
     root = Path(root)
     info = json.loads((root / "meta/info.json").read_text())
     if info["fps"] != 10 or info["splits"] != {"train": "0:1600"} or info["total_episodes"] != 1600:
@@ -97,7 +157,7 @@ def inspect_source(root):
         raise ValueError("Episode metadata does not cover all frames")
     stats = {}
     for key in ("state", "actions"):
-        values = np.asarray(table[key].to_pylist(), dtype=np.float32)
+        values = np.asarray(pc.list_flatten(table[key]).to_numpy(), dtype=np.float32).reshape(-1, 8)
         if values.shape != (len(table), 8) or not np.isfinite(values).all():
             raise ValueError(f"Invalid {key} shape or nonfinite values")
         values = values[~demo]
@@ -108,6 +168,14 @@ def inspect_source(root):
             "std": values.std(0),
             "count": np.array([len(values)]),
         }
+    if action_representation == "delta_joint":
+        state = np.asarray(pc.list_flatten(table["state"]).to_numpy(), dtype=np.float32).reshape(
+            -1, 8
+        )[~demo]
+        actions = np.asarray(
+            pc.list_flatten(table["actions"]).to_numpy(), dtype=np.float32
+        ).reshape(-1, 8)[~demo]
+        stats = delta_chunk_statistics(state, actions, lengths, chunk_size)
     report = {
         "source_root": str(root.resolve()),
         "source_revision": ROBOMME_REVISION,
@@ -129,6 +197,39 @@ def inspect_source(root):
         ),
         "meta_info_sha256": hashlib.sha256((root / "meta/info.json").read_bytes()).hexdigest(),
     }
+    content = {
+        key: {name: value.tolist() for name, value in fields.items()}
+        for key, fields in stats.items()
+    }
+    source_digest = hashlib.sha256()
+    for path in paths:
+        source_digest.update(str(path.relative_to(root)).encode())
+        with path.open("rb") as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                source_digest.update(block)
+    provenance = {
+        "scope": "full_training_execution_frames",
+        "source_data_sha256": source_digest.hexdigest(),
+        "source_revision": ROBOMME_REVISION,
+        "source_root": str(root.resolve()),
+        "meta_info_sha256": report["meta_info_sha256"],
+        "episodes": len(rows),
+        "action_representation": action_representation,
+        "chunk_size": chunk_size,
+        "tail_policy": "repeat_episode_final_action"
+        if action_representation == "delta_joint"
+        else "single_frame",
+        "quantile_method": "numpy_exact_linear" if action_representation == "delta_joint" else None,
+        "statistics": content,
+    }
+    report["normalization"] = provenance
+    report["normalization_sha256"] = hashlib.sha256(
+        json.dumps(
+            {key: value for key, value in provenance.items() if key != "source_root"},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
     return np.flatnonzero(~demo), np.asarray(lengths), stats, report
 
 
@@ -148,10 +249,31 @@ def select_execution_episodes(indices, lengths, episodes):
 
 
 class RoboMMEControlDataset(Dataset):
-    def __init__(self, root, chunk_size=20, revision=ROBOMME_REVISION, episodes=None):
+    def __init__(
+        self,
+        root,
+        chunk_size=20,
+        revision=ROBOMME_REVISION,
+        episodes=None,
+        action_representation="absolute",
+        augmentation="none",
+    ):
+        if augmentation not in ("none", "official_v1"):
+            raise ValueError("Unknown RoboMME augmentation")
+        self.augmentation = None
+        if augmentation == "official_v1":
+            from .robomme_transforms import OfficialRoboMMEAugmentation
+
+            self.augmentation = OfficialRoboMMEAugmentation()
         from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
-        self.indices, lengths, stats, self.report = inspect_source(root)
+        if action_representation == "absolute":
+            self.indices, lengths, stats, self.report = inspect_source(root)
+        else:
+            self.indices, lengths, stats, self.report = inspect_source(
+                root, action_representation=action_representation, chunk_size=chunk_size
+            )
+        self.report["augmentation"] = augmentation
         self.indices, lengths, self.source_episode_ids = select_execution_episodes(
             self.indices, lengths, episodes
         )
@@ -195,8 +317,15 @@ class RoboMMEControlDataset(Dataset):
         frame = self.source[int(self.indices[index])]
         if bool(frame["is_demo"].item()):
             raise ValueError("Demo frame reached control supervision")
+        images = {}
+        if getattr(self, "augmentation", None) is not None:
+            images = {
+                KEYS[key]: self.augmentation(frame[key], wrist=key == "wrist_image")
+                for key in ("image", "wrist_image")
+            }
         return {
             **{KEYS[key]: frame[key] for key in KEYS},
+            **images,
             "action_is_pad": frame["actions_is_pad"],
             "task": frame["task"],
         }
@@ -214,7 +343,12 @@ def make_control_datasets(cfg):
     if cfg.policy.type != "evo1_groot" or cfg.policy.n_obs_steps != 1:
         raise ValueError("This entry point is for the memoryless Evo1-GROOT baseline")
     return RoboMMEControlDataset(
-        cfg.dataset.root, cfg.policy.chunk_size, cfg.dataset.revision, cfg.dataset.episodes
+        cfg.dataset.root,
+        cfg.policy.chunk_size,
+        cfg.dataset.revision,
+        cfg.dataset.episodes,
+        action_representation=getattr(cfg.policy, "robomme_action_representation", "absolute"),
+        augmentation=getattr(cfg.policy, "robomme_augmentation", "none"),
     ), None
 
 

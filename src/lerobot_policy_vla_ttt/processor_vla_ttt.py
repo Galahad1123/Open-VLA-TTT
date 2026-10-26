@@ -29,6 +29,14 @@ from .evo1.processor_evo1 import (
 )
 
 
+def _validate_representation(config, preprocessor, postprocessor):
+    from .models.evo1_groot.configuration_evo1_groot import Evo1GrootConfig
+    from .models.evo1_groot.processor_evo1_groot import validate_robomme_processor_pair
+
+    if isinstance(config, Evo1GrootConfig):
+        validate_robomme_processor_pair(config, preprocessor, postprocessor)
+
+
 def _localize_steps(pipeline: PolicyProcessorPipeline) -> None:
     """Migrate legacy checkpoint step names without changing the upstream registry."""
     replacements = {
@@ -109,6 +117,7 @@ def make_vla_ttt_pre_post_processors_from_pretrained(
         _reconnect_relative_absolute_steps(preprocessor, postprocessor)
         _localize_steps(preprocessor)
         _localize_steps(postprocessor)
+        _validate_representation(config, preprocessor, postprocessor)
         return reconcile_evo1_processors(config, preprocessor, postprocessor)
 
     preprocessor, postprocessor = make_pre_post_processors(
@@ -124,4 +133,5 @@ def make_vla_ttt_pre_post_processors_from_pretrained(
     )
     _localize_steps(preprocessor)
     _localize_steps(postprocessor)
+    _validate_representation(config, preprocessor, postprocessor)
     return reconcile_evo1_processors(config, preprocessor, postprocessor)

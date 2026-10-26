@@ -50,6 +50,7 @@ class Evo1GrootPolicy(Evo1Policy):
             "optimizer_weight_decay",
             "optimizer_grad_clip_norm",
             "scheduler_warmup_steps",
+            "scheduler_min_lr_ratio",
         }
     )
 
@@ -66,6 +67,11 @@ class Evo1GrootPolicy(Evo1Policy):
         self._keep_frozen_embedder_eval()
         self.init_rtc_processor()
         self.reset()
+
+    def select_action(self, batch, **kwargs):
+        if self.config.robomme_action_representation == "delta_joint":
+            raise ValueError("delta_joint requires Evo1Inference to anchor the whole action chunk")
+        return super().select_action(batch, **kwargs)
 
     def supports_rtc(self):
         return False

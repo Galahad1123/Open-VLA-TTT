@@ -11,6 +11,7 @@ from importlib import import_module
 from lerobot.policies.factory import make_pre_post_processors as upstream_processors
 
 from .configuration_vla_ttt import VLATTTConfig
+from .models.evo1_groot import processor_evo1_groot  # Register serialized delta steps.
 from .models.evo1_groot.configuration_evo1_groot import Evo1GrootConfig
 from .processor_vla_ttt import make_vla_ttt_pre_post_processors_from_pretrained
 
@@ -19,6 +20,10 @@ def make_pre_post_processors(policy_cfg, pretrained_path=None, pretrained_revisi
     if isinstance(policy_cfg, (VLATTTConfig, Evo1GrootConfig)) and pretrained_path:
         return make_vla_ttt_pre_post_processors_from_pretrained(
             policy_cfg, pretrained_path, revision=pretrained_revision, **kwargs
+        )
+    if isinstance(policy_cfg, Evo1GrootConfig) and not pretrained_path:
+        return processor_evo1_groot.make_evo1_groot_pre_post_processors(
+            policy_cfg, dataset_stats=kwargs.get("dataset_stats")
         )
     return upstream_processors(policy_cfg, pretrained_path, pretrained_revision, **kwargs)
 

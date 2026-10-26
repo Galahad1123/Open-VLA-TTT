@@ -18,7 +18,9 @@ REQUIRED_CHECKPOINT_FILES = (
 )
 
 
-def build_plan(machine, prefix):
+def build_plan(machine, prefix, variant="legacy"):
+    if variant not in {"legacy", "official"}:
+        raise ValueError("Unknown recipe variant")
     machine = Path(machine).expanduser().resolve()
     if prefix in ("", ".", "..") or Path(prefix).name != prefix:
         raise ValueError("run-prefix 必须是单个目录名")
@@ -28,7 +30,8 @@ def build_plan(machine, prefix):
     runs = Path(storage["runs_root"])
     plan = []
     for stage in ("stage1", "stage2"):
-        recipe = ROOT / f"configs/training/robomme-screen/multitask-six-{stage}.json"
+        tag = "official-" if variant == "official" else ""
+        recipe = ROOT / f"configs/training/robomme-screen/multitask-six-{tag}{stage}.json"
         config = json.loads(recipe.read_text())
         if config["training_stage"] != stage:
             raise ValueError(f"{recipe} 的训练阶段不匹配")
@@ -92,13 +95,19 @@ def execute(plan, runner=subprocess.run):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--machine", type=Path, default=Path("configs/machine.local.toml"))
-    parser.add_argument("--run-prefix", default="robomme-six-fresh-seed1000")
+    parser.add_argument("--run-prefix")
+    parser.add_argument("--variant", choices=("legacy", "official"), default="legacy")
     parser.add_argument(
         "--dry-run", action="store_true", help="仅打印两阶段命令，不创建目录或启动训练"
     )
     args = parser.parse_args(argv)
     try:
-        plan = build_plan(args.machine, args.run_prefix)
+        prefix = args.run_prefix or (
+            "robomme-six-official-seed1000"
+            if args.variant == "official"
+            else "robomme-six-fresh-seed1000"
+        )
+        plan = build_plan(args.machine, prefix, args.variant)
         if args.dry_run:
             for stage in plan:
                 print(shlex.join(stage["command"]))

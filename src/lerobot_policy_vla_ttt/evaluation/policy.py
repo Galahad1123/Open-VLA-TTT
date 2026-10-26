@@ -3,6 +3,7 @@
 import hashlib
 import importlib.metadata
 import json
+from collections import deque
 from pathlib import Path
 
 import numpy as np
@@ -129,6 +130,7 @@ class Evo1Inference:
             pretrained_path=str(path),
             preprocessor_overrides={"device_processor": {"device": device}},
         )
+        self._absolute_action_queue = deque()
         self.metadata = {
             "benchmark": benchmark,
             "action_dim": action_dim,
@@ -165,6 +167,8 @@ class Evo1Inference:
         torch.manual_seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
+        if hasattr(self, "_absolute_action_queue"):
+            self._absolute_action_queue.clear()
         self.policy.reset()
         self.pre.reset()
         self.post.reset()
@@ -176,6 +180,24 @@ class Evo1Inference:
             else torch.inference_mode
         )
         with context():
+            if (
+                getattr(self.policy.config, "robomme_action_representation", "absolute")
+                == "delta_joint"
+            ):
+                if not self._absolute_action_queue:
+                    raw = observation_batch(observation)
+                    anchor = raw["observation.state"][..., :7].clone()
+                    chunk = self.post(self.policy.predict_action_chunk(self.pre(raw))).clone()
+                    if chunk.ndim != 3 or chunk.shape[0] != 1 or chunk.shape[-1] != 8:
+                        raise ValueError(
+                            "delta_joint inference requires a [1, time, 8] action chunk"
+                        )
+                    chunk[..., :7] += anchor.to(chunk)[:, None, :]
+                    self._absolute_action_queue.extend(
+                        chunk[0, : self.policy.config.n_action_steps].unbind(0)
+                    )
+                action = self._absolute_action_queue.popleft()
+                return action.detach().cpu().numpy().astype(np.float32)
             batch = self.pre(observation_batch(observation))
             action = self.post(self.policy.select_action(batch))
             return action[0].detach().cpu().numpy().astype(np.float32)

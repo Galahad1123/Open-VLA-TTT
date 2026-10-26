@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from lerobot.configs.policies import PreTrainedConfig
 
 from ...evo1.configuration_evo1 import Evo1Config
+from ...training.schedulers import CosineFloorSchedulerConfig
 
 
 @PreTrainedConfig.register_subclass("evo1_groot")
@@ -18,9 +19,18 @@ class Evo1GrootConfig(Evo1Config):
     flow_beta_alpha: float = 1.5
     flow_beta_beta: float = 1.0
     flow_time_scale: float = 0.999
+    robomme_action_representation: str = "absolute"
+    robomme_augmentation: str = "none"
+    scheduler_min_lr_ratio: float = 0.0
 
     def __post_init__(self):
         super().__post_init__()
+        if self.robomme_action_representation not in {"absolute", "delta_joint"}:
+            raise ValueError("Unknown robomme_action_representation")
+        if self.robomme_augmentation not in {"none", "official_v1"}:
+            raise ValueError("Unknown robomme_augmentation")
+        if not 0 <= self.scheduler_min_lr_ratio <= 1:
+            raise ValueError("scheduler_min_lr_ratio must be in [0, 1]")
         if self.dtype not in {"bfloat16", "float32"}:
             raise ValueError("dtype must be bfloat16 or float32 (fp16 GradScaler is unsupported)")
         for name in (
@@ -55,3 +65,11 @@ class Evo1GrootConfig(Evo1Config):
             raise ValueError("evo1_groot does not support RTC")
         if self.action_head != "flowmatching":
             raise ValueError("evo1_groot requires action_head='flowmatching'")
+
+    def get_scheduler_preset(self):
+        if self.scheduler_min_lr_ratio > 0:
+            return CosineFloorSchedulerConfig(
+                num_warmup_steps=self.scheduler_warmup_steps,
+                min_lr_ratio=self.scheduler_min_lr_ratio,
+            )
+        return super().get_scheduler_preset()
