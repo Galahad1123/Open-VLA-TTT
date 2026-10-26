@@ -25,6 +25,8 @@ cp configs/machine.example.toml configs/machine.local.toml
 `--manifest` 接收预览输出的 revision/files 对象；下载结束保存的文件列表仅作校验记录，不能直接作为该参数输入。
 下载 zip 后解压到 `rmbench_raw/data/<task>/demo_clean/`，检查内部有
 `data/episode0.hdf5` 与 `instructions/episode0.json`，不要重复套一层目录。
+本次 Rearrange Blocks 包内是新版 `<task>/aloha_agilex/`，应解压到
+`rmbench_raw/demo_clean/`，得到 `demo_clean/rearrange_blocks/aloha_agilex/data/episode_0000000.hdf5`；转换器支持此布局。先检查ZIP成员再选择解压根目录。
 
 单任务和多任务分别转换，避免统计混入其他任务：
 

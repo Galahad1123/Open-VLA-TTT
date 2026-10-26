@@ -26,4 +26,4 @@ CUDA_VISIBLE_DEVICES=0 bash scripts/train_rmbench_single.sh \
   --seed 1000
 ```
 
-数据验收和后台进程信息待实际启动后补充。
+数据下载已完成并验证SHA256。包内为新版XPolicyLab数据，50条演示，置于 rmbench_raw/demo_clean/rearrange_blocks/aloha_agilex。首次因解压层级不匹配产生的12KiB未完成派生目录已另名保留，未用于训练。后台进程信息待实际启动后补充。
