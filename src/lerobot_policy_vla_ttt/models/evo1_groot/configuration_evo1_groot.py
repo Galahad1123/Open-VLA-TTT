@@ -14,6 +14,7 @@ class Evo1GrootConfig(Evo1Config):
     # LeRobot's trainer consults dtype before use_amp; explicit bf16 avoids an
     # outer fp16 GradScaler trying to unscale the VLM's bf16 gradients.
     dtype: str = "bfloat16"
+    optimizer_vlm_lr: float | None = None
     num_register_tokens: int = 0
     flow_beta_alpha: float = 1.5
     flow_beta_beta: float = 1.0
@@ -21,6 +22,10 @@ class Evo1GrootConfig(Evo1Config):
 
     def __post_init__(self):
         super().__post_init__()
+        if self.optimizer_vlm_lr is not None and (
+            not math.isfinite(self.optimizer_vlm_lr) or self.optimizer_vlm_lr <= 0
+        ):
+            raise ValueError("optimizer_vlm_lr must be finite and positive")
         if self.dtype not in {"bfloat16", "float32"}:
             raise ValueError("dtype must be bfloat16 or float32 (fp16 GradScaler is unsupported)")
         for name in (

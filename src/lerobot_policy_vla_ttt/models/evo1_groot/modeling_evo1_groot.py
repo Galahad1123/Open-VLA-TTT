@@ -45,6 +45,7 @@ class Evo1GrootPolicy(Evo1Policy):
             "finetune_action_head",
             "apply_training_stage_defaults",
             "optimizer_lr",
+            "optimizer_vlm_lr",
             "optimizer_betas",
             "optimizer_eps",
             "optimizer_weight_decay",
@@ -69,6 +70,20 @@ class Evo1GrootPolicy(Evo1Policy):
 
     def supports_rtc(self):
         return False
+
+    def get_optim_params(self):
+        if self.config.optimizer_vlm_lr is None:
+            return super().get_optim_params()
+        groups = {}
+        for name, param in self.named_parameters():
+            if not param.requires_grad:
+                continue
+            vlm = name.startswith("model.embedder.")
+            lr = self.config.optimizer_vlm_lr if vlm else self.config.optimizer_lr
+            no_decay = name.endswith("bias") or ".bias" in name or param.dim() == 1 or "norm" in name.lower()
+            decay = 0.0 if no_decay else self.config.optimizer_weight_decay
+            groups.setdefault((vlm, decay), {"params": [], "lr": lr, "weight_decay": decay})["params"].append(param)
+        return list(groups.values())
 
     @property
     def _amp_enabled(self):

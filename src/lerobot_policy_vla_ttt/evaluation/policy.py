@@ -42,18 +42,22 @@ def checkpoint_identity(path):
 
 
 def validate_config(config, benchmark, n_action_steps):
-    if benchmark not in {"libero", "robomme"}:
+    if benchmark not in {"libero", "robomme", "rmbench"}:
         raise ValueError("Unknown benchmark")
-    action_dim = 7 if benchmark == "libero" else 8
+    action_dim = {"libero": 7, "robomme": 8, "rmbench": 14}[benchmark]
+    state_dim = 14 if benchmark == "rmbench" else 8
     if config.output_features["action"].shape != (action_dim,):
         raise ValueError(f"Checkpoint action dimension does not match {benchmark}: {action_dim}")
-    if config.input_features["observation.state"].shape != (8,):
-        raise ValueError("Checkpoint state dimension must be 8")
+    if config.input_features["observation.state"].shape != (state_dim,):
+        raise ValueError(f"Checkpoint state dimension must be {state_dim}")
     cameras = {
         key for key, feature in config.input_features.items() if feature.type == FeatureType.VISUAL
     }
-    if cameras != {"observation.images.image", "observation.images.image2"}:
-        raise ValueError("Checkpoint camera names must be image and image2")
+    expected = {"observation.images.image", "observation.images.image2"}
+    if benchmark == "rmbench":
+        expected.add("observation.images.image3")
+    if cameras != expected:
+        raise ValueError(f"Checkpoint camera names must be {sorted(expected)}")
     if not 1 <= n_action_steps <= config.chunk_size:
         raise ValueError("n_action_steps must be in [1, chunk_size]")
     if config.n_obs_steps != 1 or config.rtc_config is not None:
@@ -61,22 +65,24 @@ def validate_config(config, benchmark, n_action_steps):
     return action_dim
 
 
-def observation_batch(observation):
+def observation_batch(observation, *, benchmark="libero"):
+    state_dim = 14 if benchmark == "rmbench" else 8
+    image_shape = (240, 320, 3) if benchmark == "rmbench" else (256, 256, 3)
     state = np.asarray(observation["state"], dtype=np.float32)
-    if state.shape != (8,) or not np.isfinite(state).all():
-        raise ValueError("Expected finite state vector of shape (8,)")
+    if state.shape != (state_dim,) or not np.isfinite(state).all():
+        raise ValueError(f"Expected finite state vector of shape ({state_dim},)")
     task = observation["task"]
     if not isinstance(task, str) or not task.strip():
         raise ValueError("Expected nonempty task instruction")
     batch = {"observation.state": torch.from_numpy(state.copy()).unsqueeze(0), "task": [task]}
-    for name in ("image", "image2"):
+    for name in (("image", "image2", "image3") if benchmark == "rmbench" else ("image", "image2")):
         image = observation["images"][name]
         if (
             not isinstance(image, np.ndarray)
             or image.dtype != np.uint8
-            or image.shape != (256, 256, 3)
+            or image.shape != image_shape
         ):
-            raise ValueError("Expected uint8 HWC image (256, 256, 3)")
+            raise ValueError(f"Expected uint8 HWC image {image_shape}")
         batch[f"observation.images.{name}"] = (
             torch.from_numpy(image.copy()).permute(2, 0, 1).unsqueeze(0).float() / 255
         )
@@ -132,7 +138,7 @@ class Evo1Inference:
         self.metadata = {
             "benchmark": benchmark,
             "action_dim": action_dim,
-            "state_dim": 8,
+            "state_dim": 14 if benchmark == "rmbench" else 8,
             "action_space": "eef_delta" if benchmark == "libero" else "joint_angle",
             "implementation": implementation,
             "checkpoint": str(path),
@@ -176,6 +182,6 @@ class Evo1Inference:
             else torch.inference_mode
         )
         with context():
-            batch = self.pre(observation_batch(observation))
+            batch = self.pre(observation_batch(observation, benchmark=self.metadata["benchmark"]))
             action = self.post(self.policy.select_action(batch))
             return action[0].detach().cpu().numpy().astype(np.float32)

@@ -105,7 +105,7 @@ def main():
         choices=["native", "local", "evo1_groot", "robottt", "mac", "mag", "mal", "aqmem", "t2mem"],
         required=True,
     )
-    parser.add_argument("--benchmark", choices=["libero", "robomme"], required=True)
+    parser.add_argument("--benchmark", choices=["libero", "robomme", "rmbench"], required=True)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--device", default="cuda")

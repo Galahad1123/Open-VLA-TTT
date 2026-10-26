@@ -12,6 +12,10 @@ vlm = "/srv/models/InternVL3-1B-hf"
 libero_dataset = "/srv/datasets/HuggingFaceVLA-libero"
 # lerobot/robomme @ 92796abbc67db4ea6447e5031d04bf47aa3770bb (full dataset).
 robomme_dataset = "/srv/datasets/robomme"
+rmbench_source = "/srv/sources/RMBench"
+rmbench_assets = "/srv/datasets/rmbench/assets"
+rmbench_raw = "/srv/datasets/rmbench/raw"
+rmbench_dataset = "/srv/datasets/rmbench/lerobot"
 
 [storage]
 # Each --run-name gets run.json, metrics.jsonl, logs/rank-N.log and step-N/ here.

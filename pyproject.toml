@@ -22,6 +22,7 @@ vla-ttt-eval-client = { path = "packages/eval-client", editable = true }
 
 [project.optional-dependencies]
 libero = ["lerobot[libero]==0.6.1"]
+rmbench = ["h5py==3.15.1"]
 
 [project.scripts]
 vla-ttt-train = "lerobot_policy_vla_ttt.cli:train"
@@ -53,6 +54,7 @@ only-include = [
     "packages/eval-client/src", "packages/eval-client/pyproject.toml",
     "environments/libero/pyproject.toml", "environments/libero/uv.lock",
     "environments/robomme/pyproject.toml", "environments/robomme/uv.lock",
+    "environments/rmbench/README.md",
 ]
 
 [tool.pytest.ini_options]

@@ -14,6 +14,10 @@ MACHINE_FIELDS = {
         "libero_dataset",
         "robomme_initial_checkpoint",
         "robomme_dataset",
+        "rmbench_source",
+        "rmbench_assets",
+        "rmbench_raw",
+        "rmbench_dataset",
     },
     "storage": {"runs_root", "hf_home"},
 }

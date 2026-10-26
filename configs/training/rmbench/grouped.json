@@ -1,0 +1,8 @@
+{
+  "chunk_size": 50,
+  "n_action_steps": 10,
+  "action_lr": 0.0001,
+  "vlm_lr": 0.00001,
+  "stage1": {"batch_size": 8, "chunks_per_task": 40000},
+  "stage2": {"batch_size": 4, "chunks_per_task": 320000}
+}
