@@ -148,3 +148,8 @@ git pull --ff-only
 ```
 
 本实验不会修改 master 或 `feat/v100-training`。
+
+## 带视频的子集评测
+
+训练完成后按[六任务子集评测指南](../robomme-subset-evaluation.md)安装独立仿真环境，
+使用固定训练 episode 和验证场景条件进行串行评测，保存视频、阶段进展与 HTML 报告。
