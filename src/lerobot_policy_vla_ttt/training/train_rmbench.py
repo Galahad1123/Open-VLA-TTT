@@ -188,7 +188,9 @@ def main():
             "wandb.enable": False,
             "batch_size": batch,
             "steps": steps,
-            "save_freq": max(1, steps // 2) if args.smoke_steps else min(10000, steps),
+            "save_freq": max(1, steps // 2)
+            if args.smoke_steps
+            else min(recipe.get("save_freq", 10000), steps),
             "output_dir": str(output),
         }
         if args.resume:

@@ -50,3 +50,72 @@ def test_checkpoint_lineage(tmp_path):
         validate_lineage(tmp_path, dict(identity, preparation_sha256="other"), resume=False)
     with pytest.raises(ValueError):
         validate_lineage(tmp_path, identity, resume=True)
+
+
+def test_recipe_checkpoint_interval_reaches_both_stages(tmp_path, monkeypatch, capsys):
+    import json
+    import sys
+
+    from lerobot_policy_vla_ttt.training import train_rmbench as training
+
+    vlm = tmp_path / "vlm"
+    vlm.mkdir()
+    (vlm / "config.json").write_text("{}")
+    dataset = tmp_path / "dataset"
+    dataset.mkdir()
+    (dataset / "preparation.json").write_text(
+        json.dumps(
+            {
+                "tasks": ["rearrange_blocks"],
+                "upstream_revision": training.UPSTREAM_REVISION,
+                "partial": False,
+                "episodes": [],
+            }
+        )
+    )
+    recipe = tmp_path / "recipe.json"
+    recipe.write_text(
+        json.dumps(
+            {
+                "chunk_size": 50,
+                "n_action_steps": 10,
+                "action_lr": 1e-4,
+                "vlm_lr": 1e-5,
+                "save_freq": 5000,
+                "stage1": {"batch_size": 8, "chunks_per_task": 40000},
+                "stage2": {"batch_size": 4, "chunks_per_task": 320000},
+            }
+        )
+    )
+    monkeypatch.setattr(
+        training,
+        "read_machine",
+        lambda _: {
+            "assets": {"vlm": str(vlm), "rmbench_dataset": str(dataset)},
+            "storage": {"runs_root": str(tmp_path / "runs")},
+        },
+    )
+    monkeypatch.setattr(training, "configure_cache", lambda *a: None)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "train",
+            "--machine",
+            "unused",
+            "--recipe",
+            str(recipe),
+            "--tasks",
+            "rearrange_blocks",
+            "--mode",
+            "single",
+            "--run-name",
+            "test",
+            "--dry-run",
+        ],
+    )
+    training.main()
+    output = capsys.readouterr().out
+    assert output.count("--save_freq=5000") == 2
+    assert "--steps=5000" in output
+    assert "--steps=80000" in output
