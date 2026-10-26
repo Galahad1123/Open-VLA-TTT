@@ -26,4 +26,20 @@ CUDA_VISIBLE_DEVICES=0 bash scripts/train_rmbench_single.sh \
   --seed 1000
 ```
 
-数据下载已完成并验证SHA256。包内为新版XPolicyLab数据，50条演示，置于 rmbench_raw/demo_clean/rearrange_blocks/aloha_agilex。首次因解压层级不匹配产生的12KiB未完成派生目录已另名保留，未用于训练。后台进程信息待实际启动后补充。
+数据下载已完成并验证SHA256。包内为新版XPolicyLab数据，50条演示，置于 rmbench_raw/demo_clean/rearrange_blocks/aloha_agilex。首次因解压层级不匹配产生的12KiB未完成派生目录已另名保留，未用于训练。后台运行信息见下方。
+
+原始数据审计：50条演示、20085帧，轨迹长度396–408；14维状态与动作均有限，三路相机帧数一致。审计详情位于 artifacts/experiments/rmbench-rearrange-blocks-20261026/raw-audit.json。
+
+## 正式启动验收
+
+2026-10-26 21:57:54 +08:00 后台启动，启动时代码 commit=491e7ccda52277b4d33b3a6fa7982deb49359e8d。监督shell PID=3271886，使用独立session，可在本会话结束后继续执行；Stage1正常返回后自动执行Stage2。
+
+- 数据转换成功：50 episodes、20085 frames、1 task，preparation.partial=false；归一化统计有限。
+- dry-run确认两阶段batch8/4、steps5000/80000、save_freq均5000。结果存于 artifacts/experiments/rmbench-rearrange-blocks-20261026/dry-run.json。
+- 实际Stage1读取50条轨迹、20085帧；可训练参数60,183,320，总参数713,352,600。
+- step50：loss=1.585、grad_norm=3.895、lr=2.6e-6（warmup中）、update_s=0.523，均有限。约1.9 step/s，GPU利用率99%；nvidia-smi总占用约9.2GiB，包含桌面进程。
+- 两阶段完整日志：/home/hello/lizk/vlas/vla-ttt/outputs/logs/rmbench-rearrange-blocks-evo1-groot-grouped-seed1000.log。
+- 输出：/home/hello/lizk/vlas/vla-ttt/outputs/rmbench/rearrange-blocks-evo1-groot-grouped-seed1000-stage1（以及-stage2）。
+- 启动信息：artifacts/experiments/rmbench-rearrange-blocks-20261026/launch.json；运行结束写exit-code.txt。无该文件不代表一定存活，须同时检查PID和日志进展。
+
+本记录只验收训练已正常开始，不代表收敛或任务成功率。Stage2时间待实际吞吐确认。
