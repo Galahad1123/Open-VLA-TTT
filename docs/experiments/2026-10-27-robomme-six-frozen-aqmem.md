@@ -124,3 +124,47 @@ done
 
 验证记录：全套回归394通过、7跳过；随后保留原始非零dropout并补充测试，microbatch专用11项通过。
 本次仅完成CPU正确性验证，未对正在占用的本机GPU启动测试，暂无GPU提速结论。
+
+## 已确定的双5090正式实验：mb6 / 2000更新
+
+新增独立配方，不覆盖此前1000更新模板：
+
+- `configs/training/robomme-screen/multitask-six-frozen-baseline-mb6-2k.json`
+- `configs/training/robomme-screen/multitask-six-frozen-aqmem-mb6-2k.json`
+
+两组global batch=6、episode microbatch=6、steps=2000、warmup=100、save_every=500。
+其余数据、seed、冻结VLM、增强、学习率和loss规则保持一致。
+此预算优先对齐2000次更新，不保证AQMEM在10小时内完成。
+两台机器分别在 `experiment/robomme-task-screen` 分支 `git pull --ff-only` 后执行。
+初始化权重在命令的 `--checkpoint` 参数中，必须是同一30k baseline的完整pretrained_model目录；
+显式参数覆盖machine文件中的旧初始化默认值，不使用短测权重或 `--resume`。
+
+Baseline机器：
+
+```bash
+CUDA_VISIBLE_DEVICES=0 OMP_NUM_THREADS=2 TOKENIZERS_PARALLELISM=false \
+HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+uv run --no-sync python -m lerobot_policy_vla_ttt.training.train_episode_parallel \
+  --machine configs/machine.local.toml \
+  --checkpoint outputs/robomme-six-official-seed1000-stage2/checkpoints/030000/pretrained_model \
+  --architecture evo1_groot --benchmark robomme \
+  --recipe configs/training/robomme-screen/multitask-six-frozen-baseline-mb6-2k.json \
+  --run-name robomme-six-frozen-baseline-mb6-2k-run01
+```
+
+AQMEM机器：
+
+```bash
+CUDA_VISIBLE_DEVICES=0 OMP_NUM_THREADS=2 TOKENIZERS_PARALLELISM=false \
+HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+uv run --no-sync python -m lerobot_policy_vla_ttt.training.train_episode_parallel \
+  --machine configs/machine.local.toml \
+  --checkpoint outputs/robomme-six-official-seed1000-stage2/checkpoints/030000/pretrained_model \
+  --architecture aqmem --benchmark robomme \
+  --recipe configs/training/robomme-screen/multitask-six-frozen-aqmem-mb6-2k.json \
+  --memory-config configs/training/robomme-screen/multitask-six-frozen-memory.json \
+  --run-name robomme-six-frozen-aqmem-mb6-2k-run01
+```
+
+checkpoint路径可以改为机器上的绝对路径；输出由machine的storage.runs_root和run-name决定。
+保存目录为step-00000500、step-00001000、step-00001500、step-00002000。
