@@ -366,7 +366,7 @@ uv sync --frozen
 
 ### 2. 复制数据
 
-本机完整训练数据在：
+本机已准备好的完整训练数据：**九任务、450 条轨迹、277,052 帧，约 30.8 GiB**。目录在：
 
 ```text
 /home/hello/lizk/datasets/rmbench/lerobot-all
