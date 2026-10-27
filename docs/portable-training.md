@@ -561,7 +561,91 @@ environments/rmbench/.venv/bin/python -m vla_ttt_eval.rmbench_runner \
 正式协议和分片规则见 [RMBench baseline](rmbench-baseline.md)，
 当前单任务训练记录见 [Rearrange Blocks实验](experiments/2026-10-26-rmbench-rearrange-blocks-training.md)。
 
-### 5090：复用现成数据的最短流程
+### 5090：一次复制全部任务，按需训练其中一部分
+
+完整复制的是九任务的**原始训练包**（11.77 GiB、450条演示），不是把所有任务都加入一次训练。
+目前本机仅 Rearrange Blocks 已转换成 LeRobot；其余八个任务的完整ZIP均已下载、校验。
+先将全部原始包复制到5090，以后换任务无需重新联网下载。
+
+**现有入口支持单任务、任意明确的任务组合以及全部九任务。**
+但训练时 `--tasks` 必须与派生数据目录中的任务集合完全一致；当前不支持在已转换的
+`lerobot-all` 中仅通过训练参数筛选子集，因为归一化统计也必须来自所选任务。
+因此采用“完整原始资源 → 所选任务专用的派生目录 → 训练”的流程。
+
+1. 在5090原来的仓库中切到团队已推送的分支并复用原 `.venv`，不用新建worktree。
+先确认该目录没有正在运行的训练、没有未处理的源码修改；已存在本地分支时用
+`git switch feat/rmbench-baseline`，不重复创建：
+
+```bash
+git fetch origin
+git switch -c feat/rmbench-baseline --track origin/feat/rmbench-baseline
+uv sync --frozen
+```
+
+2. 在5090上一次复制所有九任务的ZIP。`SOURCE_HOST` 替换成数据准备机器的SSH地址。
+文件列表来自已提交的固定清单，只传训练ZIP，不传仿真资产或本机的smoke目录：
+
+```bash
+export RMBENCH_ARCHIVES="$HOME/datasets/rmbench/archives"
+mkdir -p "$RMBENCH_ARCHIVES"
+.venv/bin/python - <<'PYLIST'
+import json
+from pathlib import Path
+m = json.loads(Path('configs/datasets/rmbench-resources.json').read_text())
+Path('/tmp/rmbench-archive-files.txt').write_text(''.join(x['path'] + '\n' for x in m['files']))
+PYLIST
+rsync -a --info=progress2 --files-from=/tmp/rmbench-archive-files.txt \
+  SOURCE_HOST:/home/hello/lizk/datasets/rmbench/raw/ \
+  "$RMBENCH_ARCHIVES/"
+```
+
+随后执行本节第2步中的SHA256校验/解压代码，令 `RMBENCH_RAW="$HOME/datasets/rmbench/raw-full"`；
+再按第3步准备固定版本RMBench源码及machine字段 `rmbench_source`、`rmbench_raw`、
+`rmbench_dataset`、`vlm` 和 `runs_root`。源码仅提供转换codec，不需要安装仿真依赖。
+
+3. 选择任务并转换。以下例子选择两任务；任务名称用空格分隔，不使用逗号：
+
+```bash
+TASKS=(rearrange_blocks swap_T)
+DATASET_DIR="$HOME/datasets/rmbench/lerobot-rearrange-swap-t"
+RUN_NAME=rmbench-rearrange-swap-t-seed1000
+
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 HF_DATASETS_OFFLINE=1 \
+.venv/bin/python -m lerobot_policy_vla_ttt.baselines.rmbench_data \
+  --machine configs/machine.local.toml --tasks "${TASKS[@]}" \
+  --output "$DATASET_DIR"
+```
+
+转换读取完整原始数据中的这两个任务，输出独立的统计及 `preparation.json`。
+如目录已存在且已完整转换，直接复用，不再执行转换。不要使用 `--max-episodes` 做正式数据。
+
+4. 用相同任务列表预览训练配置：
+
+```bash
+CUDA_VISIBLE_DEVICES=0 bash scripts/train_rmbench_multi.sh \
+  --machine configs/machine.local.toml \
+  --recipe configs/training/rmbench/rearrange-blocks-grouped.json \
+  --tasks "${TASKS[@]}" --dataset-root "$DATASET_DIR" \
+  --run-name "$RUN_NAME" --seed 1000 --dry-run
+```
+
+这里复用每5000步保存的数值recipe，文件名不限制任务。上述**两任务**实际为
+Stage1 10000步、Stage2 160000步，batch8/4；这是按任务数扩大样本预算，不是5k/80k总预算。
+确认预算后去掉 `--dry-run` 正式启动；先短测则替换为 `--smoke-steps 2` 并用不同run-name。
+这只是操作示例，不表示已经决定启动两任务或九任务长训练。
+
+| 训练范围 | 转换时的 `--tasks` | 训练入口 | 本recipe的Stage1 / Stage2步数 |
+| --- | --- | --- | --- |
+| 一个任务 | `rearrange_blocks` | `train_rmbench_single.sh` | 5000 / 80000 |
+| 指定两个任务 | `rearrange_blocks swap_T` | `train_rmbench_multi.sh` | 10000 / 160000 |
+| 指定三个任务 | `rearrange_blocks swap_T swap_blocks` | `train_rmbench_multi.sh` | 15000 / 240000 |
+| 全部九任务 | `all` | `train_rmbench_multi.sh` | 45000 / 720000 |
+
+换任务组合时同时换派生目录和run-name；训练传入与转换相同的 `--tasks`。
+这些多任务入口训练一个联合模型。若希望每个任务独立一个模型，应逐任务转换并使用单任务入口，
+可把独立任务分发到不同工作站。
+
+### 5090：只复用已转换单任务数据的快捷方式
 
 适用于已有同版本 InternVL3、本机只做训练的工作站；无需下载原始ZIP、克隆仿真源码或
 安装评测环境。先检出团队提供的 RMBench commit，执行上面的 `uv sync --frozen`。
