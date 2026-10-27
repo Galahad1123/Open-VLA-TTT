@@ -24,6 +24,21 @@ def training_budget(chunks_per_task, batch_size, tasks):
     return math.ceil(chunks_per_task * tasks / batch_size)
 
 
+def select_episodes(preparation, tasks):
+    """Select a read-only view; normalization stays tied to the source dataset."""
+    missing = set(tasks) - set(preparation["tasks"])
+    if missing:
+        raise ValueError(f"Requested tasks missing from dataset: {sorted(missing)}")
+    if set(tasks) == set(preparation["tasks"]):
+        return None  # Preserve existing all-data runs and their resume configuration.
+    episodes = preparation["episodes"]
+    if [item["episode"] for item in episodes] != list(range(len(episodes))):
+        raise ValueError("Preparation episodes must use contiguous source indices")
+    if set(tasks) - {item["task"] for item in episodes}:
+        raise ValueError("Selected tasks have no episodes in preparation")
+    return [item["episode"] for item in episodes if item["task"] in tasks]
+
+
 def validate_lineage(checkpoint, identity, *, resume):
     saved = json.loads((Path(checkpoint) / "rmbench_run.json").read_text())
     if resume:
@@ -106,8 +121,7 @@ def main():
         raise ValueError("A local VLM directory is required")
     preparation_bytes = (dataset / "preparation.json").read_bytes()
     preparation = json.loads(preparation_bytes)
-    if set(preparation["tasks"]) != set(tasks):
-        raise ValueError("Prepare a dataset containing exactly the selected tasks and statistics")
+    episodes = select_episodes(preparation, tasks)
     if preparation["upstream_revision"] != UPSTREAM_REVISION:
         raise ValueError("Dataset protocol revision mismatch")
     if preparation["partial"] and not args.smoke_steps:
@@ -193,6 +207,8 @@ def main():
             else min(recipe.get("save_freq", 10000), steps),
             "output_dir": str(output),
         }
+        if episodes is not None:
+            common["dataset.episodes"] = episodes
         if args.resume:
             common["config_path"] = str(args.resume / "train_config.json")
         elif checkpoint:
@@ -212,6 +228,8 @@ def main():
                 {
                     "output": str(output),
                     "identity": identity,
+                    "selected_episodes": episodes,
+                    "normalization": "source_dataset_stats",
                     "expected_chunks_per_task": steps * batch / len(tasks),
                     "argv": argv,
                 },

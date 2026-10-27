@@ -28,13 +28,13 @@ cp configs/machine.example.toml configs/machine.local.toml
 本次 Rearrange Blocks 包内是新版 `<task>/aloha_agilex/`，应解压到
 `rmbench_raw/demo_clean/`，得到 `demo_clean/rearrange_blocks/aloha_agilex/data/episode_0000000.hdf5`；转换器支持此布局。先检查ZIP成员再选择解压根目录。
 
-单任务和多任务分别转换，避免统计混入其他任务：
+跨机器训练直接复制本机已准备的 `/home/hello/lizk/datasets/rmbench/lerobot-all`，
+最短操作见 [快速开始](portable-training.md#rmbench复制数据配置路径启动训练)。
+以下转换命令仅供从原始数据重建完整数据集时使用：
 
 ```bash
 .venv/bin/python -m lerobot_policy_vla_ttt.baselines.rmbench_data \
-  --machine configs/machine.local.toml --tasks put_back_block --output "$SINGLE_DATASET"
-.venv/bin/python -m lerobot_policy_vla_ttt.baselines.rmbench_data \
-  --machine configs/machine.local.toml --tasks all --output "$MULTI_DATASET"
+  --machine configs/machine.local.toml --tasks all --output "$RMBENCH_DATASET"
 ```
 
 转换使用上游官方 JPEG codec。旧 HDF5：当前图像/state[t] 对应 joint[t+1] 动作；
@@ -66,11 +66,11 @@ clip1、warmup1000；不做图像增强。Stage1 冻结本地通用 InternVL3；
 ```bash
 bash scripts/train_rmbench_single.sh \
   --machine configs/machine.local.toml --recipe configs/training/rmbench/grouped.json \
-  --tasks put_back_block --dataset-root "$SINGLE_DATASET" --run-name put-back-grouped --dry-run
+  --tasks put_back_block --dataset-root "$RMBENCH_DATASET" --run-name put-back-grouped --dry-run
 
 bash scripts/train_rmbench_multi.sh \
   --machine configs/machine.local.toml --recipe configs/training/rmbench/grouped.json \
-  --tasks all --dataset-root "$MULTI_DATASET" --run-name all-grouped --dry-run
+  --tasks all --dataset-root "$RMBENCH_DATASET" --run-name all-grouped --dry-run
 ```
 
 移除 `--dry-run` 才训练；加 `--smoke-steps 2` 可各阶段跑两步（batch改为1）。
@@ -79,7 +79,10 @@ bash scripts/train_rmbench_multi.sh \
 进行阶段切换。`--stage stage1|stage2 --resume <pretrained_model>` 是同阶段恢复。
 resume 不允许修改任务、数据、recipe、seed、总步数或 batch；跨机器迁移应保留
 run-name、旁侧 `.rmbench.json`、完整 checkpoint（包括 training_state 与
-`rmbench_run.json`），只修改 machine 路径。每个任务组合必须有对应的独立数据统计。
+`rmbench_run.json`），只修改 machine 路径。同一完整数据集支持任意任务组合：通过 LeRobot `dataset.episodes` 选择样本，
+仍使用源数据集 `meta/stats.json` 的归一化统计，不生成新的数据目录。
+任务列表与准备清单 SHA256 共同约束 checkpoint 的数据身份，不能用旧单任务数据的 checkpoint
+直接恢复到新完整数据集；两者统计不同。原单任务目录和历史恢复行为不变。
 
 ## 评测
 
