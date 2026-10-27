@@ -2,6 +2,7 @@
 """Serial GPU probes; refuse an occupied GPU and never start a long training run."""
 
 import argparse
+import csv
 import json
 import os
 import statistics
@@ -12,15 +13,41 @@ import time
 from pathlib import Path
 
 
-def assert_idle(gpu):
+def assert_idle(gpu, *, allow_busy=False):
     result = subprocess.run(
-        ["nvidia-smi", "-i", gpu, "--query-compute-apps=pid", "--format=csv,noheader,nounits"],
+        [
+            "nvidia-smi",
+            "-i",
+            gpu,
+            "--query-compute-apps=pid,process_name,used_gpu_memory",
+            "--format=csv,noheader,nounits",
+        ],
         check=True,
         capture_output=True,
         text=True,
     )
-    if result.stdout.strip():
-        raise RuntimeError("GPU has active compute processes; existing jobs were not touched")
+    processes = []
+    for row in csv.reader(result.stdout.splitlines()):
+        if not row or not row[0].strip():
+            continue
+        if len(row) == 1 and row[0].strip().rstrip(".") == "No running processes found":
+            continue
+        if not row[0].strip().isdigit():
+            raise RuntimeError(f"Unrecognized GPU process query output: {row!r}")
+        processes.append(", ".join(field.strip() for field in row))
+    if processes:
+        details = "; ".join(processes)
+        if not allow_busy:
+            raise RuntimeError(
+                f"GPU has active compute processes (PID, name, MiB): {details}. "
+                "Even small allocations are blocked by default. If sharing is intentional, "
+                "pass --allow-busy-gpu. Existing jobs were not touched."
+            )
+        print(
+            f"Sharing GPU by explicit request (PID, name, MiB): {details}. "
+            "Timing may include contention.",
+            flush=True,
+        )
 
 
 def write_log_bundle(output):
@@ -43,6 +70,11 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--gpu", default="0")
     parser.add_argument("--updates", type=int, default=3)
+    parser.add_argument(
+        "--allow-busy-gpu",
+        action="store_true",
+        help="Explicitly permit sharing with listed compute processes; timings may be affected",
+    )
     args = parser.parse_args()
     if args.updates < 2:
         parser.error("Use at least two updates for a steady-state estimate")
@@ -56,7 +88,7 @@ def main():
         parser.error("Expected an evo1_groot delta_joint baseline checkpoint")
     if not (checkpoint / "model.safetensors").is_file():
         parser.error("Checkpoint weights are missing")
-    assert_idle(args.gpu)
+    assert_idle(args.gpu, allow_busy=args.allow_busy_gpu)
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     env = dict(
@@ -85,10 +117,10 @@ def main():
         text=True,
     )
     (output / "hardware.log").write_text(hardware.stdout)
-    results = {"complete": False}
+    results = {"complete": False, "allow_busy_gpu": args.allow_busy_gpu}
     sampled = None
     for architecture in ["evo1_groot", "aqmem"]:
-        assert_idle(args.gpu)
+        assert_idle(args.gpu, allow_busy=args.allow_busy_gpu)
         name = "baseline" if architecture == "evo1_groot" else "aqmem"
         recipe = json.loads((recipes / f"multitask-six-frozen-{name}.json").read_text())
         recipe.update(steps=args.updates, warmup_steps=1, save_every=args.updates)

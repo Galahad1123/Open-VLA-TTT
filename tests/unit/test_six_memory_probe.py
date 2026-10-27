@@ -42,3 +42,33 @@ def test_log_bundle_excludes_weights_and_optimizer(probe, tmp_path):
             "aqmem/run.json",
             "aqmem/metrics.jsonl",
         }
+
+
+@pytest.mark.parametrize("output", ["", "No running processes found\n"])
+def test_probe_accepts_empty_process_list(probe, monkeypatch, output):
+    monkeypatch.setattr(probe["subprocess"], "run", lambda *a, **kw: SimpleNamespace(stdout=output))
+    probe["assert_idle"]("0")
+
+
+def test_explicit_busy_override_reports_process(probe, monkeypatch, capsys):
+    monkeypatch.setattr(
+        probe["subprocess"], "run", lambda *a, **kw: SimpleNamespace(stdout="123, python, 120\n")
+    )
+    probe["assert_idle"]("0", allow_busy=True)
+    assert "123" in capsys.readouterr().out
+
+
+def test_small_allocation_still_requires_override(probe, monkeypatch):
+    monkeypatch.setattr(
+        probe["subprocess"], "run", lambda *a, **kw: SimpleNamespace(stdout="123, python, 120\n")
+    )
+    with pytest.raises(RuntimeError, match="allow-busy-gpu"):
+        probe["assert_idle"]("0")
+
+
+def test_unknown_query_output_does_not_silently_pass(probe, monkeypatch):
+    monkeypatch.setattr(
+        probe["subprocess"], "run", lambda *a, **kw: SimpleNamespace(stdout="unexpected output")
+    )
+    with pytest.raises(RuntimeError, match="Unrecognized"):
+        probe["assert_idle"]("0")
