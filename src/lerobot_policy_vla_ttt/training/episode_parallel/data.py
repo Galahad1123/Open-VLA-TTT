@@ -112,7 +112,17 @@ def temporal_transform(image, transform, *, seed, camera):
 
 
 class EpisodeSource:
-    def __init__(self, dataset, episodes, *, execution, horizon, transform=None, demo_stride=None):
+    def __init__(
+        self,
+        dataset,
+        episodes,
+        *,
+        execution,
+        horizon,
+        transform=None,
+        demo_stride=None,
+        robomme_augmentation="none",
+    ):
         if execution < 2 or execution % 2 or horizon < 1:
             raise ValueError("Invalid execution/horizon")
         self.dataset, self.execution, self.horizon = dataset, execution, horizon
@@ -121,6 +131,9 @@ class EpisodeSource:
             raise ValueError("demo_stride must be a positive integer")
         self.transform = transform
         episodes = list(episodes)
+        self.robomme_augmentation = robomme_augmentation
+        if robomme_augmentation not in {"none", "official_v1"}:
+            raise ValueError("Unknown RoboMME augmentation")
         self.episodes = {e.index: e for e in episodes}
         if len(episodes) != len(self.episodes) or not episodes:
             raise ValueError("Empty or duplicate episodes")
@@ -156,6 +169,19 @@ class EpisodeSource:
 
     def _frame(self, ep, index, *, seed, supervised):
         frame = dict(self.dataset[index])
+        if self.robomme_augmentation == "official_v1":
+            from ...baselines.robomme_transforms import OfficialRoboMMEAugmentation
+
+            augmentation = OfficialRoboMMEAugmentation()
+            # Replay the same transform parameters across an episode, independently
+            # of flow-time RNG and architecture. Never write to the source dataset.
+            with torch.random.fork_rng(devices=[]):
+                for key, value in frame.items():
+                    if key.startswith("observation.images."):
+                        torch.random.default_generator.manual_seed(
+                            derive_seed(seed, "official", key)
+                        )
+                        frame[key] = augmentation(value, wrist=key.endswith("image2"))
         # RoboMME decodes uint8; LIBERO already supplies float [0, 1].
         # Normalize before augmentation, for demo and execution alike.
         # InternVL's resize expects [0, 1] and would saturate uint8 input.

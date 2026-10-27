@@ -25,8 +25,37 @@ class Recipe:
     training_mode: str = "alternating"
     sampling_mode: str = "same_task"
     update_unit: str = "episode"
+    freeze_vlm: bool = False
+    task_groups: dict[str, list[int]] | None = None
+    robomme_augmentation: str = "none"
 
     def __post_init__(self):
+        if type(self.freeze_vlm) is not bool:
+            raise ValueError("freeze_vlm must be boolean")
+        if self.robomme_augmentation not in {"none", "official_v1"}:
+            raise ValueError("Unknown RoboMME augmentation")
+        if self.task_groups is not None:
+            ids = []
+            if not isinstance(self.task_groups, dict) or not self.task_groups:
+                raise ValueError("task_groups must be a nonempty mapping")
+            for task, episodes in self.task_groups.items():
+                if (
+                    not isinstance(task, str)
+                    or not task
+                    or not isinstance(episodes, list)
+                    or not episodes
+                ):
+                    raise ValueError("Invalid task group")
+                if any(type(i) is not int or i < 0 for i in episodes):
+                    raise ValueError("Invalid episode ID")
+                ids.extend(episodes)
+            if len(ids) != len(set(ids)):
+                raise ValueError("Duplicate task-group episode")
+            if self.sampling_mode != "mixed_tasks" or self.global_batch_size % len(
+                self.task_groups
+            ):
+                raise ValueError("Task subsets require mixed_tasks and a full task cycle per batch")
+
         if self.update_unit not in ("episode", "chunk"):
             raise ValueError("update_unit must be episode or chunk")
         if self.update_unit == "chunk":

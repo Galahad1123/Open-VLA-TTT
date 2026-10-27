@@ -166,10 +166,14 @@ def run(
         for key in COUNTERS:
             metrics[key] = int(metrics[key])
             totals[key] += metrics[key]
+        if accelerator.device.type == "cuda":
+            metrics["peak_allocated_gib"] = torch.cuda.max_memory_allocated() / 2**30
+            metrics["peak_reserved_gib"] = torch.cuda.max_memory_reserved() / 2**30
         metrics.update(
             step=step,
             phase=phase,
             phase_updates=control.counts.copy(),
+            sampled_episode_ids=[s.episode_id for s in global_samples],
             global_task_count=len(task_counts),
             global_task_counts=dict(task_counts),
             grad_norm=grad_norm,

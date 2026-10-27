@@ -63,10 +63,10 @@ def resolve_config(source, architecture, recipe, *, device, overrides=None):
         use_amp=True,
         use_flash_attn=False,
         training_stage="stage2",
-        apply_training_stage_defaults=True,
-        finetune_vlm=True,
-        finetune_language_model=True,
-        finetune_vision_model=True,
+        apply_training_stage_defaults=not recipe.freeze_vlm,
+        finetune_vlm=not recipe.freeze_vlm,
+        finetune_language_model=not recipe.freeze_vlm,
+        finetune_vision_model=not recipe.freeze_vlm,
         finetune_action_head=True,
         memory_training="joint" if recipe.training_mode == "joint" else "memory_only",
         memory_update_protocol="half_execution",
@@ -239,6 +239,10 @@ def main(argv=None):
             raise ValueError(
                 "No saved augmentation config; provide --augmentation-config explicitly"
             )
+        if benchmark != "robomme" and (recipe.task_groups or recipe.robomme_augmentation != "none"):
+            raise ValueError("RoboMME subset/augmentation options require benchmark robomme")
+        if recipe.robomme_augmentation == "official_v1" and transforms.get("enable", False):
+            raise ValueError("Do not combine official RoboMME augmentation with generic transforms")
         transform_config = augmentation_config(transforms)
         identity = {
             "dataset": {
@@ -439,7 +443,7 @@ def _execute_run(
             preprocessor_overrides={"device_processor": {"device": str(accelerator.device)}},
         )
         if args.benchmark == "robomme":
-            from .episode_parallel.robomme import RoboMMEMemoryDataset
+            from .episode_parallel.robomme import RoboMMEMemoryDataset, select_task_subset
 
             dataset = RoboMMEMemoryDataset(
                 args.dataset_root,
@@ -447,7 +451,7 @@ def _execute_run(
                 revision=args.revision,
                 repo_id=args.dataset_repo,
             )
-            episodes = dataset.episodes
+            episodes = select_task_subset(dataset.episodes, recipe.task_groups)
         else:
             dataset = LeRobotDataset(
                 args.dataset_repo,
@@ -475,6 +479,7 @@ def _execute_run(
             horizon=recipe.horizon,
             transform=ImageTransforms(transform_config),
             demo_stride=args.demo_stride,
+            robomme_augmentation=recipe.robomme_augmentation,
         )
     except Exception as exc:
         error = f"Initialization failed: {type(exc).__name__}: {exc}"

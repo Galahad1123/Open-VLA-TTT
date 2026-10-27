@@ -1,0 +1,4 @@
+{
+  "memory_gate_init": 0.001,
+  "memory_update_rule": "t2mem_adaptive"
+}

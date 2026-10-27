@@ -131,6 +131,7 @@ class Evo1Inference:
             preprocessor_overrides={"device_processor": {"device": device}},
         )
         self._absolute_action_queue = deque()
+        self._delta_env_step = 0
         self.metadata = {
             "benchmark": benchmark,
             "action_dim": action_dim,
@@ -169,6 +170,7 @@ class Evo1Inference:
             torch.cuda.manual_seed_all(seed)
         if hasattr(self, "_absolute_action_queue"):
             self._absolute_action_queue.clear()
+        self._delta_env_step = 0
         self.policy.reset()
         self.pre.reset()
         self.post.reset()
@@ -187,7 +189,14 @@ class Evo1Inference:
                 if not self._absolute_action_queue:
                     raw = observation_batch(observation)
                     anchor = raw["observation.state"][..., :7].clone()
-                    chunk = self.post(self.policy.predict_action_chunk(self.pre(raw))).clone()
+                    kwargs = (
+                        {"env_step": self._delta_env_step}
+                        if hasattr(self.policy, "observe")
+                        else {}
+                    )
+                    chunk = self.post(
+                        self.policy.predict_action_chunk(self.pre(raw), **kwargs)
+                    ).clone()
                     if chunk.ndim != 3 or chunk.shape[0] != 1 or chunk.shape[-1] != 8:
                         raise ValueError(
                             "delta_joint inference requires a [1, time, 8] action chunk"
@@ -196,6 +205,11 @@ class Evo1Inference:
                     self._absolute_action_queue.extend(
                         chunk[0, : self.policy.config.n_action_steps].unbind(0)
                     )
+                elif hasattr(self.policy, "observe"):
+                    self.policy.observe(
+                        self.pre(observation_batch(observation)), env_step=self._delta_env_step
+                    )
+                self._delta_env_step = getattr(self, "_delta_env_step", 0) + 1
                 action = self._absolute_action_queue.popleft()
                 return action.detach().cpu().numpy().astype(np.float32)
             batch = self.pre(observation_batch(observation))

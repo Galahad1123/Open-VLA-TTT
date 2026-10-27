@@ -77,3 +77,20 @@ class RoboMMEMemoryDataset:
             "action_is_pad": frame["actions_is_pad"],
             "task": frame["task"],
         }
+
+
+def select_task_subset(episodes, task_groups):
+    """Change sampler labels only; dataset language prompts remain unchanged."""
+    from dataclasses import replace
+
+    if task_groups is None:
+        return episodes
+    lookup = {e.index: e for e in episodes}
+    result, seen = [], set()
+    for task, ids in task_groups.items():
+        for index in ids:
+            if index not in lookup or index in seen:
+                raise ValueError(f"Unknown or duplicate subset episode: {index}")
+            seen.add(index)
+            result.append(replace(lookup[index], task=task))
+    return result
