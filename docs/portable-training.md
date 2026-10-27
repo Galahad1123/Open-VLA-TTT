@@ -1,6 +1,7 @@
 # 跨机器训练快速开始
 
 适用于 LIBERO 的 T²Mem / AQMem / MAC / MAG / MAL，以及 RoboMME 的 T²Mem episode-parallel 训练。
+RMBench 的 Evo1-GROOT 单/多任务 baseline 见文末独立章节，其启动和恢复规则不同。
 每台机器只改 `configs/machine.local.toml` 中的路径，所有机器使用同一代码版本和 recipe。
 
 **当前 LIBERO episode-parallel 训练协议仅支持 `HuggingFaceVLA/libero` 的下述固定版本。
@@ -335,3 +336,227 @@ uv run --frozen vla-ttt-serve --machine configs/machine.local.toml \
 联合模式保持 VLM 全量训练，`global_batch_size=8`，混合任务采样；
 使用 `configs/ttt/aqmem/libero/recipe.json` 和 `memory.json`。
 单 GPU 实测及 CPU/Gloo 证据见 recipe 文档，多 GPU CUDA/NCCL 仍待目标机器验收。
+
+## RMBench：Evo1-GROOT baseline 跨机器快速开始
+
+本节使用 `train_rmbench_single.sh` / `train_rmbench_multi.sh`，**不是上文的
+`train_episode_parallel`**。启动参数、产物和恢复规则以本节为准。
+检出包含本节的 `feat/rmbench-baseline` 分支或团队约定的后续合并 commit。
+训练不需要安装仿真环境；只有闭环评测需要 `environments/rmbench/.venv`。
+不要在已有训练运行的机器上执行依赖同步或覆盖正在读取的数据。
+
+### 1. 新工作站安装训练依赖
+
+可以使用 `uv sync --frozen --extra rmbench`。使用清华镜像时，导出包含 RMBench
+可选依赖（h5py）的精确清单；不要直接沿用不包含该 extra 的旧清单：
+
+```bash
+uv venv --python 3.12 .venv
+uv export --frozen --extra rmbench --no-emit-local \
+  -o /tmp/vla-ttt-rmbench-requirements.txt
+# 大 wheel 不经过终端代理；只影响该命令。
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
+    -u http_proxy -u https_proxy -u all_proxy \
+  uv pip sync --python .venv/bin/python /tmp/vla-ttt-rmbench-requirements.txt \
+    --default-index https://pypi.tuna.tsinghua.edu.cn/simple --require-hashes
+uv pip install --python .venv/bin/python --no-deps \
+  --default-index https://pypi.tuna.tsinghua.edu.cn/simple \
+  -e packages/eval-client -e .
+uv pip check --python .venv/bin/python
+```
+
+后续直接使用 `.venv/bin/python` 和仓库 shell 入口，不在启动训练时重新同步依赖。
+VLM 使用上文固定的本地 InternVL3 快照；本 baseline 不需要 LIBERO/RoboMME 策略权重。
+
+### 2. 下载固定版本的完整九任务数据
+
+论文任务集合固定为 `battery_try`、`blocks_ranking_try`、`cover_blocks`、
+`observe_and_pickup`、`press_button`、`put_back_block`、`rearrange_blocks`、
+`swap_T`、`swap_blocks`。`all` 仅指这九个任务，不含额外的 `place_block_mat`。
+
+原始训练 zip 共 **12,633,491,826 字节，约11.77 GiB**；这不是包含所有衍生版本的
+整个 HF 仓库。解压文件、LeRobot 派生数据、环境和检查点另外占空间。
+数据固定 `TianxingChen/RMBench@5d8ff21038fba32ea549e9eee8497aaba9aab5cf`；
+仓库清单 `configs/datasets/rmbench-resources.json` 保存路径、大小和 LFS SHA256，
+避免镜像元数据 API 限流。保留下载包可用于跨工作站分发和重新校验。
+
+```bash
+RMBENCH_ARCHIVES="$HOME/datasets/rmbench/archives"
+# 先输出所选文件及总大小。
+.venv/bin/python scripts/download_rmbench.py \
+  --kind data --tasks all \
+  --manifest configs/datasets/rmbench-resources.json \
+  --output "$RMBENCH_ARCHIVES"
+# 执行完整下载；重跑会复用校验合格的文件并续传 .partial。
+.venv/bin/python scripts/download_rmbench.py \
+  --kind data --tasks all \
+  --manifest configs/datasets/rmbench-resources.json \
+  --output "$RMBENCH_ARCHIVES" --download
+```
+
+默认源是 `https://hf-mirror.com`，下载器的大文件正文及重定向后的传输绕过代理。
+不要同时让两个下载器写同一个 `.partial`。需要官方源回退时显式传入
+`--endpoint https://huggingface.co`；仍保留 revision 和 SHA256 校验。
+`--manifest` 接受本仓库的 revision/files 对象；下载结束的文件列表记录不是同一种输入格式。
+
+把包解压到**新的**原始数据根目录，避免与早期 smoke 样本混合。
+下面同时处理已知的新旧两种包内目录，并校验文件长度和SHA256；遇到其他布局直接报错。
+`RMBENCH_RAW` 必须尚不存在，执行中断后的残留目录应另名保留再重试，不覆盖训练数据。
+
+```bash
+export RMBENCH_ARCHIVES
+export RMBENCH_RAW="$HOME/datasets/rmbench/raw-full"
+.venv/bin/python - <<'PY'
+import hashlib, json, os, zipfile
+from pathlib import Path
+manifest = json.loads(Path('configs/datasets/rmbench-resources.json').read_text())
+archives, raw = Path(os.environ['RMBENCH_ARCHIVES']), Path(os.environ['RMBENCH_RAW'])
+raw.mkdir(parents=True, exist_ok=False)
+for row in manifest['files']:
+    path = archives / row['path']
+    with path.open('rb') as stream:
+        assert hashlib.file_digest(stream, 'sha256').hexdigest() == row['sha256'], path
+    assert path.stat().st_size == row['size'], path
+    task = Path(row['path']).parts[1]
+    with zipfile.ZipFile(path) as archive:
+        names = archive.namelist()
+        assert all(not Path(n).is_absolute() and '..' not in Path(n).parts for n in names)
+        files = [n for n in names if not n.endswith('/')]
+        if files and all(n.startswith(task + '/aloha_agilex/') for n in files):
+            destination = raw / 'demo_clean'
+        elif files and all(n.startswith('demo_clean/') for n in files):
+            destination = raw / 'data' / task
+        else:
+            raise ValueError(f'Inspect unexpected ZIP layout: {path}')
+        archive.extractall(destination)
+    print('Extracted:', task, flush=True)
+PY
+```
+
+新版布局为 `raw-full/demo_clean/<task>/aloha_agilex/data/episode_0000000.hdf5`；
+旧版为 `raw-full/data/<task>/demo_clean/data/episode0.hdf5`。保留 instruction(s) 等附属文件。
+
+### 3. 机器配置与数据转换
+
+准备固定上游源码，数据转换调用其中的官方图像 codec，不需要初始化 XPolicyLab 子模块：
+
+```bash
+git clone https://github.com/RoboTwin-Platform/RMBench "$HOME/sources/RMBench"
+git -C "$HOME/sources/RMBench" checkout 7d1cdfc7661c273a7a5c5f6126e2d1a7f0a3f4b7
+cp configs/machine.example.toml configs/machine.local.toml
+```
+
+修改现有 TOML 的字段（下面是路径示例，不要重复声明 `[assets]` / `[storage]`）：
+
+```toml
+[assets]
+vlm = "/home/hello/models/InternVL3-1B-hf"
+rmbench_source = "/home/hello/sources/RMBench"
+rmbench_raw = "/home/hello/datasets/rmbench/raw-full"
+rmbench_dataset = "/home/hello/datasets/rmbench/lerobot-rearrange-blocks"
+rmbench_assets = "/home/hello/datasets/rmbench/assets"
+[storage]
+runs_root = "/home/hello/experiments/rmbench"
+```
+
+完整单任务转换（正式训练不使用 `--max-episodes`）：
+
+```bash
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 HF_DATASETS_OFFLINE=1 \
+.venv/bin/python -m lerobot_policy_vla_ttt.baselines.rmbench_data \
+  --machine configs/machine.local.toml --tasks rearrange_blocks \
+  --output "$HOME/datasets/rmbench/lerobot-rearrange-blocks"
+```
+
+九任务联合训练时另建派生目录，将 `--tasks` 改为 `all`、`--output` 改为
+`$HOME/datasets/rmbench/lerobot-all`。不同任务组合必须分别计算统计，不能用联合数据集
+冒充单任务训练。输出必须是新目录，包含 `meta/`、`data/`、`preparation.json`；正式入口拒绝
+`partial=true`。可直接复制已完整转换的目录以节省时间；不要只复制 Parquet 而漏掉图像。
+跨机器恢复时原样复制 `preparation.json`，其字节哈希用于检查数据身份。
+
+### 4. 单任务两阶段训练
+
+复现当前 Rearrange Blocks 实验：
+
+```bash
+CUDA_VISIBLE_DEVICES=0 bash scripts/train_rmbench_single.sh \
+  --machine configs/machine.local.toml \
+  --recipe configs/training/rmbench/rearrange-blocks-grouped.json \
+  --tasks rearrange_blocks --run-name rearrange-blocks-evo1-groot-grouped-seed1000 \
+  --seed 1000 --dry-run
+```
+
+去掉 `--dry-run` 后正式训练。`--smoke-steps 2` 是另一个短测选项，会将 batch 改为1、
+每阶段只跑2步并缩短warmup，必须使用新 run-name；它不同于上文 episode-parallel 的 `--stop-after`。
+入口自动设置离线模式；Stage1冻结通用VLM，随机初始化动作头，Stage2从本次Stage1权重初始化并
+解冻VLM、重建优化器。当前每任务Stage1 batch8×5000步，Stage2 batch4×80000步，
+动作头/VLM LR分别1e-4/1e-5，chunk50/执行10。该专用recipe每5000步保存。
+全部50条演示参与训练，**不划20%验证集，不自动进行闭环评测**；保存检查点不等于完成验证。
+
+其他任务单独训练可复用同一数值recipe，但必须替换 `--tasks`、`--run-name` 和
+`--dataset-root /本任务的完整派生数据集`。recipe文件名不决定训练任务，实际任务由CLI和数据清单核对。
+
+九任务入口示例，仅预览预算：
+
+```bash
+CUDA_VISIBLE_DEVICES=0 bash scripts/train_rmbench_multi.sh \
+  --machine configs/machine.local.toml \
+  --recipe configs/training/rmbench/grouped.json \
+  --tasks all --dataset-root "$HOME/datasets/rmbench/lerobot-all" \
+  --run-name all-evo1-groot-grouped-seed1000 --seed 1000 --dry-run
+```
+
+**同一每任务预算乘以9后，实际是Stage1 45000步、Stage2 720000步**，不是全任务合计5k/80k。
+通用 `grouped.json` 未设 `save_freq`，默认每10000步保存；若要求5000，复制recipe并添加
+`"save_freq": 5000` 后显式选择。多任务先均匀选任务再均匀选有效帧。正式联合预算需另行确定。
+当前支持多个工作站各跑独立单卡实验，不使用上文 episode-parallel 的多卡启动命令。
+
+产物位置：
+
+```text
+<runs_root>/<run-name>-stage1.rmbench.json
+<runs_root>/<run-name>-stage2.rmbench.json
+<runs_root>/<run-name>-stage1/checkpoints/005000/{pretrained_model,training_state}/
+<runs_root>/<run-name>-stage2/checkpoints/005000/{pretrained_model,training_state}/
+```
+
+入口输出到终端，后台日志用本机的 tmux/重定向保存。阶段切换用
+`--stage stage2 --checkpoint <stage1的pretrained_model目录>`；同阶段恢复用
+`--stage stage2 --resume <stage2的pretrained_model目录>`，其他任务/recipe/seed/run-name参数保留。
+**RMBench恢复保持原run-name**，与上文episode-parallel规则不同。
+迁移续训应复制完整checkpoint目录（含training_state）、旁侧对应 `.rmbench.json`、原样派生数据和
+同一VLM快照，并将产物放在新 `runs_root` 下相同相对位置；只改machine资源路径。
+
+### 5. 独立环境的闭环评测
+
+仿真资产单独下载（约1.26GiB），不能用训练zip替代：
+
+```bash
+.venv/bin/python scripts/download_rmbench.py --kind assets \
+  --metadata-endpoint https://huggingface.co --output "$HOME/datasets/rmbench/assets" --download
+bash environments/rmbench/setup.sh
+environments/rmbench/.venv/bin/python environments/rmbench/prepare_runtime.py \
+  --machine configs/machine.local.toml --runtime environments/rmbench/runtime
+```
+
+安装脚本使用清华源、独立Python3.11环境和用户目录CUDA12.8工具链；当前Blackwell组合已实测，
+其他硬件仍需运行 [环境说明](../environments/rmbench/README.md) 中的专家preflight。
+评测时两个终端分别启动：
+
+```bash
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 .venv/bin/vla-ttt-serve \
+  --machine configs/machine.local.toml --implementation evo1_groot --benchmark rmbench \
+  --checkpoint /完整路径/checkpoints/040000/pretrained_model --port 8000
+```
+
+```bash
+environments/rmbench/.venv/bin/python -m vla_ttt_eval.rmbench_runner \
+  --source environments/rmbench/runtime --task rearrange_blocks \
+  --uri ws://127.0.0.1:8000 --output artifacts/rmbench-rearrange-eval \
+  --seed 0 --episodes 100
+```
+
+默认保存H.264/yuv420p视频，`progress.json`查看成功率，`episodes.jsonl`查看逐次结果。
+不同工作站可分发不同任务或不同配方，资源路径由各自machine配置管理。
+正式协议和分片规则见 [RMBench baseline](rmbench-baseline.md)，
+当前单任务训练记录见 [Rearrange Blocks实验](experiments/2026-10-26-rmbench-rearrange-blocks-training.md)。

@@ -1,0 +1,51 @@
+{
+  "revision": "5d8ff21038fba32ea549e9eee8497aaba9aab5cf",
+  "files": [
+    {
+      "path": "data/battery_try/demo_clean.zip",
+      "size": 1491905241,
+      "sha256": "b3c0413ec4319e804842a79bc53b14aa34b0a753d25188b7d43fad3f651fcdb6"
+    },
+    {
+      "path": "data/blocks_ranking_try/demo_clean.zip",
+      "size": 3423182248,
+      "sha256": "03a61b033aa4cf6407fcf6889bb1aaf513bc9079ceedfd12d597aa8ec5e3f6e8"
+    },
+    {
+      "path": "data/cover_blocks/demo_clean.zip",
+      "size": 2188665492,
+      "sha256": "bd0b3c3af36e23090e9245d7d684e387651cf2ae9909181927dc5bc564eb83a0"
+    },
+    {
+      "path": "data/observe_and_pickup/demo_clean.zip",
+      "size": 313209089,
+      "sha256": "34c1f36887b6a729ca8e8ed5116efab2bc71e010ccf1055f28e68bd83ba2db98"
+    },
+    {
+      "path": "data/press_button/demo_clean.zip",
+      "size": 1269869836,
+      "sha256": "3305ff9e3c3fc85d58cb280e7897ec761d60f5226ad2394364284001ca1f8cab"
+    },
+    {
+      "path": "data/put_back_block/demo_clean.zip",
+      "size": 836234259,
+      "sha256": "4e214d22994fb1909a4b79d46c7f8583035a2afe3aaa698003c5eb431eeeebc0"
+    },
+    {
+      "path": "data/rearrange_blocks/demo_clean.zip",
+      "size": 789047110,
+      "sha256": "26fcda70d4d09935093d8028339dfcf05644939e527782d9557c4ec85e6195c8"
+    },
+    {
+      "path": "data/swap_T/demo_clean.zip",
+      "size": 758207985,
+      "sha256": "bb64c97430178abea75ea47144e5db8213fb2b434aa458cc07a9815b0dbfee78"
+    },
+    {
+      "path": "data/swap_blocks/demo_clean.zip",
+      "size": 1563170566,
+      "sha256": "f8d816db580116d786a2983f0b8d9fcdc569b5a5f257c39ee5bea3ad7188fff2"
+    }
+  ],
+  "total_GiB": 11.765856133773923
+}
