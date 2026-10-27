@@ -357,10 +357,11 @@ git push -u origin feat/rmbench-baseline
 cd /你的项目路径/vla-ttt
 git fetch origin
 git switch feat/rmbench-baseline
+git pull --ff-only origin feat/rmbench-baseline
 uv sync --frozen
 ```
 
-首次切换会跟踪远端同名分支；已经在此分支则用 `git pull --ff-only` 更新。
+首次切换会跟踪远端同名分支；已有这个分支也可以执行同一组命令更新。
 `uv sync` 在已有环境中同步锁定依赖，包含 RMBench 所需的 h5py。评测环境不参与训练。
 
 ### 2. 复制数据
