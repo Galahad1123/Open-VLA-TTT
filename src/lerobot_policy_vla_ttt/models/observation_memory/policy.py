@@ -41,10 +41,19 @@ class ObservationPolicy(HalfExecutionLifecycle, TitansPolicy):
         return context, valid, cache
 
     def forward_step(
-        self, batch, memory=None, *, write_mask=None, supervision_mask=None, reset_mask=None
+        self,
+        batch,
+        memory=None,
+        *,
+        write_mask=None,
+        supervision_mask=None,
+        reset_mask=None,
+        loss_reduction="sum",
     ):
         if not self.config.memory_enabled and self.config.memory_training == "memory_only":
             raise ValueError("memory_only training requires enabled memory")
+        if loss_reduction not in {"sum", "none"}:
+            raise ValueError("Invalid loss reduction")
         states, _ = self._prepare_state(batch)
         supervised = (
             torch.ones(len(states), device=self._device, dtype=torch.bool)
@@ -69,12 +78,15 @@ class ObservationPolicy(HalfExecutionLifecycle, TitansPolicy):
                     embodiment_id=ids,
                 )
                 target = (actions.float() - noise.float()).masked_fill(~mask, 0)
-                numerator = (pred.float() - target).square().masked_fill(~mask, 0).sum()
-                count = mask.sum()
+                numerator = (pred.float() - target).square().masked_fill(~mask, 0).sum((1, 2))
+                count = mask.sum((1, 2))
+                if loss_reduction == "sum":
+                    numerator, count = numerator.sum(), count.sum()
             else:
                 # Observation-only events neither need labels nor sample action noise.
-                numerator = context.new_zeros(())
-                count = torch.zeros((), device=context.device, dtype=torch.long)
+                shape = () if loss_reduction == "sum" else (len(states),)
+                numerator = context.new_zeros(shape)
+                count = torch.zeros(shape, device=context.device, dtype=torch.long)
             updated = self.model.action_head.commit(cache, write_mask)
         updated = tuple(
             replace(s, decision_index=s.decision_index + supervised.long()) for s in updated

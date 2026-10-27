@@ -25,11 +25,17 @@ class Recipe:
     training_mode: str = "alternating"
     sampling_mode: str = "same_task"
     update_unit: str = "episode"
+    episode_microbatch_size: int | None = None
     freeze_vlm: bool = False
     task_groups: dict[str, list[int]] | None = None
     robomme_augmentation: str = "none"
 
     def __post_init__(self):
+        if self.episode_microbatch_size is not None:
+            if type(self.episode_microbatch_size) is not int or self.episode_microbatch_size < 1:
+                raise ValueError("episode_microbatch_size must be positive or null")
+            if self.update_unit != "episode" or not self.freeze_vlm:
+                raise ValueError("Episode batching requires episode updates and frozen VLM")
         if type(self.freeze_vlm) is not bool:
             raise ValueError("freeze_vlm must be boolean")
         if self.robomme_augmentation not in {"none", "official_v1"}:

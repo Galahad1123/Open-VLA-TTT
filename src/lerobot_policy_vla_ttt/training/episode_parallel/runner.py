@@ -12,6 +12,7 @@ import torch.distributed as dist
 from .checkpoint import canonical, load_checkpoint, model_contract, save_checkpoint
 from .data import EpisodeSampler, MixedTaskEpisodeSampler
 from .engine import backward_episode, episode_rng
+from .microbatch import backward_microbatch
 from .optim import PhaseOptimizers
 from .runtime import broadcast_model, collective_error, distributed, synchronize_gradients
 from .streams import ChunkStreamSampler, backward_chunks, prepare_chunks
@@ -80,7 +81,8 @@ def run(
             manifest = {
                 "recipe": asdict(recipe),
                 "world_size": accelerator.num_processes,
-                "microbatch_episodes": 1,
+                "microbatch_episodes": recipe.episode_microbatch_size or 1,
+                "flow_rng_protocol": "row_event_v1" if recipe.episode_microbatch_size else "legacy",
                 "update_unit": recipe.update_unit,
                 "loss_normalization": "valid_elements" if chunk_updates else "equal_episodes",
                 "sampler_protocol": "persistent_streams_v1" if chunk_updates else "episode_v1",
@@ -131,6 +133,22 @@ def run(
                     backward=accelerator.backward,
                 )
                 del prepared
+            elif recipe.episode_microbatch_size is not None:
+                size = recipe.episode_microbatch_size
+                for offset in range(0, len(local_samples), size):
+                    samples = local_samples[offset : offset + size]
+                    metrics, memory = backward_microbatch(
+                        policy,
+                        [source.events(s.episode_id, seed=s.seed) for s in samples],
+                        decisions=[source.decision_count(s.episode_id) for s in samples],
+                        seeds=[s.seed for s in samples],
+                        recipe=recipe,
+                        backward=accelerator.backward,
+                        preprocess=pre,
+                    )
+                    del memory
+                    for key in local:
+                        local[key] += metrics[key]
             else:
                 for sample in local_samples:
                     with episode_rng(sample.seed, accelerator.device):

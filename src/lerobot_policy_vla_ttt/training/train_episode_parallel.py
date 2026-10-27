@@ -35,6 +35,11 @@ def resolve_config(source, architecture, recipe, *, device, overrides=None):
     if architecture not in KINDS or source.type not in (architecture, "evo1_groot"):
         raise ValueError("Expected evo1_groot or a checkpoint of the selected architecture")
     baseline = architecture == "evo1_groot"
+    if recipe.episode_microbatch_size is not None:
+        if architecture not in {"evo1_groot", "aqmem"}:
+            raise ValueError(
+                "Experimental episode batching requires baseline/AQMEM"
+            )
     if baseline and recipe.training_mode != "policy":
         raise ValueError("evo1_groot requires training_mode=policy")
     if not baseline and recipe.training_mode == "policy":

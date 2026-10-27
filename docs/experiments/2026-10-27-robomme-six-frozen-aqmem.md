@@ -89,3 +89,38 @@ GPU短测未执行，因此当前没有可报告的实测显存、吞吐或正�
 少量显存也可能来自仍在运行的policy server。确认允许共用后，可给短测命令添加
 `--allow-busy-gpu`。该选项不会停止任何进程，且会记录在summary中；共享GPU时的耗时
 可能受到其他进程影响，不能直接当作独占GPU吞吐。纯图形进程不在compute-apps检查范围内。
+
+## 实验性多episode microbatch（2026-10-27）
+
+新增可选recipe字段 `episode_microbatch_size`：默认null保持旧训练路径；1为新静态batch引擎的串行参考，2/3分别并行处理2/3条episode。
+global batch仍为6，完成六条episode才进行一次optimizer更新；不改变任务分配、监督量、memory写入频率或TBPTT边界。
+静态批次内短episode结束后补齐，不动态换入新episode；补齐行不贡献loss、不更新memory和时钟。
+当前只接受冻结VLM的evo1_groot/AQMEM，保留原有action dropout（正式基座为0.2）。模型检查点格式不变，resume要求相同recipe。
+
+flow噪声和time按episode采样seed与事件索引生成，各行独立且不受microbatch分组影响。
+它们的分布与旧路径一致，但具体随机样本不同。因此需重跑新路径microbatch=1作为参照，
+不能将旧短测loss与新路径要求逐位一致。CPU float32真实小型模型已验证loss、梯度、memory状态
+在关闭dropout的确定性条件下数值容差内一致，覆盖变长、不同demo起点、尾部mask以及真实相对动作/归一化/padding处理器。
+非零dropout保留原分布，但批量分组会改变具体随机掩码，因此GPU loss/梯度不要求逐位一致。
+本机GPU仍有训练任务，尚未实测5090吞吐；GPU BF16稳定性和性能由以下短测确认。
+
+5090更新分支后，从项目根目录依次跑1、2、3；每组仍包含baseline和AQMEM，各3次更新：
+
+```bash
+git pull --ff-only
+for mb in 1 2 3; do
+  uv run --no-sync python scripts/probe_robomme_six_memory.py \
+    --machine configs/machine.local.toml \
+    --checkpoint outputs/robomme-six-official-seed1000-stage2/checkpoints/030000/pretrained_model \
+    --gpu 0 --updates 3 --episode-microbatch "$mb" \
+    --output "outputs/probes/robomme-six-mb${mb}-run01" || break
+done
+```
+
+如确认GPU只有可以共享的少量计算占用，可显式添加 `--allow-busy-gpu`；不会停止现有进程。
+请复制三个目录内的 `probe-logs.tar.gz` 回来。比较同架构的每步耗时、显存、loss与梯度范数，
+同时检查sampled_episode_ids、decisions和supervised_scalars相同。变长padding会浪费计算，
+因此microbatch越大未必越快，不能仅按显存选择。
+
+验证记录：全套回归394通过、7跳过；随后保留原始非零dropout并补充测试，microbatch专用11项通过。
+本次仅完成CPU正确性验证，未对正在占用的本机GPU启动测试，暂无GPU提速结论。

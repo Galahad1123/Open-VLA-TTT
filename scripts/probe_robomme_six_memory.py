@@ -75,6 +75,12 @@ def main():
         action="store_true",
         help="Explicitly permit sharing with listed compute processes; timings may be affected",
     )
+    parser.add_argument(
+        "--episode-microbatch",
+        type=int,
+        choices=(1, 2, 3, 6),
+        help="Experimental static episode batch; 1 is its serial reference",
+    )
     args = parser.parse_args()
     if args.updates < 2:
         parser.error("Use at least two updates for a steady-state estimate")
@@ -117,13 +123,19 @@ def main():
         text=True,
     )
     (output / "hardware.log").write_text(hardware.stdout)
-    results = {"complete": False, "allow_busy_gpu": args.allow_busy_gpu}
+    results = {
+        "complete": False,
+        "allow_busy_gpu": args.allow_busy_gpu,
+        "episode_microbatch_size": args.episode_microbatch,
+    }
     sampled = None
     for architecture in ["evo1_groot", "aqmem"]:
         assert_idle(args.gpu, allow_busy=args.allow_busy_gpu)
         name = "baseline" if architecture == "evo1_groot" else "aqmem"
         recipe = json.loads((recipes / f"multitask-six-frozen-{name}.json").read_text())
         recipe.update(steps=args.updates, warmup_steps=1, save_every=args.updates)
+        if args.episode_microbatch is not None:
+            recipe["episode_microbatch_size"] = args.episode_microbatch
         recipe_path = output / f"{name}-probe-recipe.json"
         recipe_path.write_text(json.dumps(recipe, indent=2))
         command = [

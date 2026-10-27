@@ -115,14 +115,19 @@ class GrootActionHead(nn.Module):
         if actions_gt.shape != mask.shape:
             raise ValueError("actions_gt must have shape (batch, chunk_size, max_action_dim)")
         actions = actions_gt.to(device=context.device, dtype=context.dtype).masked_fill(~mask, 0)
-        noise = torch.randn_like(actions).masked_fill(~mask, 0)
-        alpha = torch.tensor(self.config.flow_beta_alpha, device=context.device)
-        beta = torch.tensor(self.config.flow_beta_beta, device=context.device)
-        time = self.config.flow_time_scale * (
-            1 - torch.distributions.Beta(alpha, beta).sample((batch,))
-        )
-        weight = time[:, None, None].to(actions.dtype)
-        noisy_actions = (1 - weight) * noise + weight * actions
+        from ...training.flow_matching import has_flow_row_seeds, sample_flow
+
+        if has_flow_row_seeds():
+            noisy_actions, noise, time = sample_flow(actions, mask, self.config)
+        else:
+            noise = torch.randn_like(actions).masked_fill(~mask, 0)
+            alpha = torch.tensor(self.config.flow_beta_alpha, device=context.device)
+            beta = torch.tensor(self.config.flow_beta_beta, device=context.device)
+            time = self.config.flow_time_scale * (
+                1 - torch.distributions.Beta(alpha, beta).sample((batch,))
+            )
+            weight = time[:, None, None].to(actions.dtype)
+            noisy_actions = (1 - weight) * noise + weight * actions
         pred = self.velocity(
             context, state, noisy_actions, time, context_mask=context_mask, embodiment_id=ids
         )
