@@ -1066,6 +1066,7 @@ name = "lerobot-policy-vla-ttt"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "h5py" },
     { name = "lerobot", extra = ["evo1", "training"] },
     { name = "vla-ttt-eval-client" },
 ]
@@ -1073,9 +1074,6 @@ dependencies = [
 [package.optional-dependencies]
 libero = [
     { name = "lerobot", extra = ["libero"] },
-]
-rmbench = [
-    { name = "h5py" },
 ]
 
 [package.dev-dependencies]
@@ -1086,7 +1084,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "h5py", marker = "extra == 'rmbench'", specifier = "==3.15.1" },
+    { name = "h5py", specifier = "==3.15.1" },
     { name = "lerobot", extras = ["evo1", "training"], specifier = "==0.6.1" },
     { name = "lerobot", extras = ["libero"], marker = "extra == 'libero'", specifier = "==0.6.1" },
     { name = "vla-ttt-eval-client", editable = "packages/eval-client" },

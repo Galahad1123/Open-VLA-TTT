@@ -12,7 +12,7 @@
 九任务 zip 合计约 **11.77 GiB**；解压及 LeRobot 派生数据额外占空间。
 
 ```bash
-uv sync --frozen --extra rmbench
+uv sync --frozen
 cp configs/machine.example.toml configs/machine.local.toml
 # 编辑 assets.vlm、rmbench_source、rmbench_raw、rmbench_dataset、rmbench_assets，storage.runs_root。
 .venv/bin/python scripts/download_rmbench.py --kind data --tasks all --output "$RMBENCH_RAW"

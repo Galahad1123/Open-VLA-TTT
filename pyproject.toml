@@ -13,6 +13,7 @@ readme = "README.md"
 requires-python = ">=3.12,<3.14"
 license = "Apache-2.0"
 dependencies = [
+    "h5py==3.15.1",
     "lerobot[evo1,training]==0.6.1",
     "vla-ttt-eval-client==0.1.0",
 ]
@@ -22,7 +23,8 @@ vla-ttt-eval-client = { path = "packages/eval-client", editable = true }
 
 [project.optional-dependencies]
 libero = ["lerobot[libero]==0.6.1"]
-rmbench = ["h5py==3.15.1"]
+# Compatibility alias for earlier setup commands; RMBench training is now included by default.
+rmbench = []
 
 [project.scripts]
 vla-ttt-train = "lerobot_policy_vla_ttt.cli:train"

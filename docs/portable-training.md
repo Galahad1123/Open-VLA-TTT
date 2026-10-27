@@ -345,25 +345,25 @@ uv run --frozen vla-ttt-serve --machine configs/machine.local.toml \
 训练不需要安装仿真环境；只有闭环评测需要 `environments/rmbench/.venv`。
 不要在已有训练运行的机器上执行依赖同步或覆盖正在读取的数据。
 
-### 1. 新工作站安装训练依赖
+### 1. 新旧工作站统一安装训练依赖
 
-可以使用 `uv sync --frozen --extra rmbench`。使用清华镜像时，导出包含 RMBench
-可选依赖（h5py）的精确清单；不要直接沿用不包含该 extra 的旧清单：
+RMBench 训练所需的 h5py 已加入默认依赖，`uv.lock` 和 `requirements-training.txt`
+同步维护。新机器首次安装、已有 master 环境更新，都在检出同一代码版本后执行：
 
 ```bash
-uv venv --python 3.12 .venv
-uv export --frozen --extra rmbench --no-emit-local \
-  -o /tmp/vla-ttt-rmbench-requirements.txt
-# 大 wheel 不经过终端代理；只影响该命令。
-env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY \
-    -u http_proxy -u https_proxy -u all_proxy \
-  uv pip sync --python .venv/bin/python /tmp/vla-ttt-rmbench-requirements.txt \
-    --default-index https://pypi.tuna.tsinghua.edu.cn/simple --require-hashes
-uv pip install --python .venv/bin/python --no-deps \
-  --default-index https://pypi.tuna.tsinghua.edu.cn/simple \
-  -e packages/eval-client -e .
+uv sync --frozen
 uv pip check --python .venv/bin/python
 ```
+
+无需额外指定 `--extra rmbench`，旧 extra 保留为空兼容别名。
+已有环境会按锁文件同步，不必删除 `.venv` 或手动逐项补包。
+这些命令只配置训练环境，不安装 SAPIEN、CuRobo 或仿真 CUDA 编译工具。
+有训练运行时不要同步它正在使用的环境；新 worktree 应有自己的 `.venv`。
+
+需要清华镜像时，直接使用本文方法二和已更新的 `requirements-training.txt`，
+不再临时导出 RMBench 专用 requirements。锁文件中的官方文件直链不会仅因设置
+`UV_INDEX_URL` 就全部改走清华；镜像安装和标准 `uv sync` 对应同一份锁定依赖。
+大 wheel 下载时清除该命令的大小写 HTTP_PROXY/HTTPS_PROXY/ALL_PROXY，避免经终端代理传输。
 
 后续直接使用 `.venv/bin/python` 和仓库 shell 入口，不在启动训练时重新同步依赖。
 VLM 使用上文固定的本地 InternVL3 快照；本 baseline 不需要 LIBERO/RoboMME 策略权重。
@@ -560,3 +560,45 @@ environments/rmbench/.venv/bin/python -m vla_ttt_eval.rmbench_runner \
 不同工作站可分发不同任务或不同配方，资源路径由各自machine配置管理。
 正式协议和分片规则见 [RMBench baseline](rmbench-baseline.md)，
 当前单任务训练记录见 [Rearrange Blocks实验](experiments/2026-10-26-rmbench-rearrange-blocks-training.md)。
+
+### 5090：复用现成数据的最短流程
+
+适用于已有同版本 InternVL3、本机只做训练的工作站；无需下载原始ZIP、克隆仿真源码或
+安装评测环境。先检出团队提供的 RMBench commit，执行上面的 `uv sync --frozen`。
+
+1. 从数据准备机器复制完整 `lerobot-rearrange-blocks/` 到目标机器，例如：
+
+```bash
+mkdir -p "$HOME/datasets/rmbench"
+# SOURCE_HOST 换为数据准备机器的SSH地址；在5090工作站执行。
+rsync -a --info=progress2   SOURCE_HOST:/home/hello/lizk/datasets/rmbench/lerobot-rearrange-blocks/   "$HOME/datasets/rmbench/lerobot-rearrange-blocks/"
+```
+
+2. 配置 `configs/machine.local.toml`，以下最小配置足够读取已转换数据进行训练；
+替换为5090机器的实际绝对路径，已有配置保留其他字段：
+
+```toml
+[assets]
+vlm = "/home/hello/models/InternVL3-1B-hf"
+rmbench_dataset = "/home/hello/datasets/rmbench/lerobot-rearrange-blocks"
+[storage]
+runs_root = "/home/hello/experiments/rmbench"
+```
+
+3. 两阶段短测：
+
+```bash
+CUDA_VISIBLE_DEVICES=0 bash scripts/train_rmbench_single.sh   --machine configs/machine.local.toml   --recipe configs/training/rmbench/rearrange-blocks-grouped.json   --tasks rearrange_blocks --run-name rearrange-5090-smoke --smoke-steps 2
+```
+
+短测将batch改为1，用于检查两阶段加载/训练/保存链路，不证明正式batch8/4一定适合目标GPU。
+本机72GB显卡的显存结果不能代替5090验收；正式启动后检查显存、loss与吞吐，避免隐式改变配方。
+
+4. 使用新名字正式训练：
+
+```bash
+CUDA_VISIBLE_DEVICES=0 bash scripts/train_rmbench_single.sh   --machine configs/machine.local.toml   --recipe configs/training/rmbench/rearrange-blocks-grouped.json   --tasks rearrange_blocks --run-name rearrange-5090-grouped-seed1000 --seed 1000
+```
+
+两阶段分别batch8/4、5000/80000更新，每5000更新保存。跨机器比较使用同一recipe、
+数据、VLM版本和seed；这里的新run-name是新的独立训练，不是恢复已有任务。
