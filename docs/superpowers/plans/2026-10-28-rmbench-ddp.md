@@ -18,3 +18,4 @@
 - 独立审查发现跨epoch恢复被 Accelerate set_epoch(0) 覆盖：已用真实 prepare_data_loader 回归测试复现并修复；同时固定恢复后末尾padding取自原epoch前缀。原始 EpochAwareSampler 不修改。
 - 全套测试首次在沙箱下遇到 CLI PATH 缺失和 socket 权限限制；重新使用虚拟环境 PATH、CUDA_VISIBLE_DEVICES 置空并允许 CPU 本地端口测试。
 - 完整 CPU 套件：301 passed，7 skipped（GPU/资产集成测试），18条现有 torch.jit 弃用警告；ruff与diff检查通过。未使用本机GPU。
+- 远端第一轮短测显示无worker时读图时间占主导；新增 `--num-workers`（每卡），用于保留短测步数的同时测正式数据预取。目标测试15 passed；完整CPU套件再次301 passed / 7 skipped。

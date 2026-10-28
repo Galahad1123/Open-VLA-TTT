@@ -122,11 +122,15 @@ def test_recipe_checkpoint_interval_reaches_both_stages(
             "test",
             "--num-processes",
             str(world_size),
+            "--num-workers",
+            "2",
             "--dry-run",
         ],
     )
     training.main()
     output = capsys.readouterr().out
+    assert "--num_workers=2" in output
+    assert "--persistent_workers=true" in output
     assert f"--steps={5000 // world_size}" in output
     assert f"--steps={80000 // world_size}" in output
     assert f'"global_batch_size": {8 * world_size}' in output

@@ -132,6 +132,7 @@ def main():
     parser.add_argument("--seed", type=int, default=1000)
     parser.add_argument("--smoke-steps", type=int)
     parser.add_argument("--smoke-use-recipe-batch", action="store_true")
+    parser.add_argument("--num-workers", type=int, help="DataLoader workers per GPU")
     parser.add_argument(
         "--num-processes", type=int, default=1, help="Local GPU count; batch_size is per GPU"
     )
@@ -150,6 +151,11 @@ def main():
     launch_workers = args.num_processes > 1
     if args.smoke_use_recipe_batch and args.smoke_steps is None:
         raise ValueError("--smoke-use-recipe-batch requires --smoke-steps")
+    if args.num_workers is not None and args.num_workers < 0:
+        raise ValueError("Worker count must be nonnegative")
+    num_workers = (
+        args.num_workers if args.num_workers is not None else (0 if args.smoke_steps else 4)
+    )
     tasks = resolve_tasks(args.tasks)
     if args.mode == "single" and len(tasks) != 1:
         raise ValueError("Single-task entry requires exactly one task")
@@ -253,8 +259,8 @@ def main():
             "save_checkpoint_to_hub": False,
             "env_eval_freq": 0,
             "log_freq": 1 if args.smoke_steps else 50,
-            "num_workers": 0 if args.smoke_steps else 4,
-            "persistent_workers": not bool(args.smoke_steps),
+            "num_workers": num_workers,
+            "persistent_workers": num_workers > 0,
             "seed": args.seed,
             "cudnn_deterministic": True,
             "wandb.enable": False,
@@ -328,6 +334,7 @@ def main():
                 ("--resume", args.resume),
                 ("--dataset-root", args.dataset_root),
                 ("--smoke-steps", args.smoke_steps),
+                ("--num-workers", args.num_workers),
             ):
                 if value is not None:
                     command.extend([flag, str(value)])

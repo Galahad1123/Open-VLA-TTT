@@ -455,6 +455,7 @@ OMP_NUM_THREADS=4 bash scripts/train_rmbench_multi.sh \
 这是正式训练命令；先加 `--dry-run` 可在不使用 GPU 的情况下检查配置。
 短测使用独立 run-name，并加 `--smoke-steps 40 --smoke-use-recipe-batch`，每阶段各40步。
 不加 `--smoke-use-recipe-batch` 时短测默认每卡 batch=1。
+短测默认不启用 DataLoader worker；测正式训练吞吐时加 `--num-workers 4`，每张卡使用4个worker。
 RTX 4090 的 NCCL 环境变量禁用不支持的 P2P/IB 通路；其他硬件按其通信能力设置。
 
 `all-80k.json`：Stage1 5k步、每卡batch8；Stage2 75k步、每卡batch4；双卡全局batch分别16/8，
