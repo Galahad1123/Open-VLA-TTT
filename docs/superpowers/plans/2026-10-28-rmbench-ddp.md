@@ -19,3 +19,5 @@
 - 全套测试首次在沙箱下遇到 CLI PATH 缺失和 socket 权限限制；重新使用虚拟环境 PATH、CUDA_VISIBLE_DEVICES 置空并允许 CPU 本地端口测试。
 - 完整 CPU 套件：301 passed，7 skipped（GPU/资产集成测试），18条现有 torch.jit 弃用警告；ruff与diff检查通过。未使用本机GPU。
 - 远端第一轮短测显示无worker时读图时间占主导；新增 `--num-workers`（每卡），用于保留短测步数的同时测正式数据预取。目标测试15 passed；完整CPU套件再次301 passed / 7 skipped。
+- 远端两阶段40步/阶段已完成，exit0，检查点记录world_size=2、batch8/4；显存峰值约19.4GiB/卡。
+- 启用4个worker后 Stage1 ~0.63秒/步、Stage2 ~1.32秒/步，80k外推约28–29h。为检验24h预算，增加候选 `all-80k-batch3.json`，Stage2每卡batch3（全局6），总步数和其他参数不变；短测后再报告建议。
