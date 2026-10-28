@@ -389,7 +389,7 @@ VLM 直接使用 5090 上原有的完整 InternVL3-1B-hf 目录。如果没有�
 
 ### 3. 配置路径
 
-在 5090 项目下新建 `configs/machine.rmbench.local.toml`，只填以下路径（换成该机的绝对路径）：
+沿用项目已有的 `configs/machine.local.toml`，合并以下路径（换成该机的绝对路径，不要覆盖其他 benchmark 的配置）：
 
 ```toml
 [assets]
@@ -408,7 +408,7 @@ runs_root = "/home/你的用户名/experiments/rmbench"
 
 ```bash
 bash scripts/train_rmbench_single.sh \
-  --machine configs/machine.rmbench.local.toml \
+  --machine configs/machine.local.toml \
   --recipe configs/training/rmbench/rearrange-blocks-grouped.json \
   --tasks rearrange_blocks \
   --run-name rearrange-blocks-grouped-seed1000
@@ -421,7 +421,7 @@ bash scripts/train_rmbench_single.sh \
 
 ```bash
 bash scripts/train_rmbench_multi.sh \
-  --machine configs/machine.rmbench.local.toml \
+  --machine configs/machine.local.toml \
   --recipe configs/training/rmbench/rearrange-blocks-grouped.json \
   --tasks rearrange_blocks put_back_block \
   --run-name two-tasks-grouped-seed1000
@@ -438,3 +438,55 @@ bash scripts/train_rmbench_multi.sh \
 此前运行中的单任务数据和实验保持原样，其统计量与新九任务数据不同，比较实验时应记录这一差异。
 断点恢复和评测见 [RMBench baseline](rmbench-baseline.md)；需要仿真评测时再配置
 [独立评测环境](../environments/rmbench/README.md)，默认保存 H.264 视频。
+
+
+### 双卡与固定 80k 更新预算
+
+在同一机器使用两张 GPU，仍使用上面的数据和 `machine.local.toml`：
+
+```bash
+CUDA_VISIBLE_DEVICES=0,1 NCCL_P2P_DISABLE=1 NCCL_IB_DISABLE=1 \
+OMP_NUM_THREADS=4 bash scripts/train_rmbench_multi.sh \
+  --machine configs/machine.local.toml \
+  --recipe configs/training/rmbench/all-80k.json \
+  --tasks all --num-processes 2 --run-name all-80k-ddp-seed1000
+```
+
+这是正式训练命令；先加 `--dry-run` 可在不使用 GPU 的情况下检查配置。
+短测使用独立 run-name，并加 `--smoke-steps 40 --smoke-use-recipe-batch`，每阶段各40步。
+不加 `--smoke-use-recipe-batch` 时短测默认每卡 batch=1。
+RTX 4090 的 NCCL 环境变量禁用不支持的 P2P/IB 通路；其他硬件按其通信能力设置。
+
+`all-80k.json`：Stage1 5k步、每卡batch8；Stage2 75k步、每卡batch4；双卡全局batch分别16/8，
+每5k保存。训练预算是全局优化器更新次数，两张卡同步更新，不把步数相加。
+预测50/执行50沿用已完成的单任务评测设置；执行长度不改变训练loss。
+多任务均衡采样，所有进程产生同一全局样本流，再由 Accelerate 分片，不能另加 DistributedSampler。
+`--num-processes 2` 为每个阶段启动独立 torchrun 作业，失败时不会启动下一阶段。
+同阶段恢复要求保持 world size、每卡 batch、recipe 和总步数不变。
+原有按 `chunks_per_task` 计算的 recipe 保留，其 DDP 步数按全局 batch 折算；不要与固定80k配方混淆。
+
+AutoDL 示例路径（合并到已有 machine 文件）：
+
+```toml
+[assets]
+vlm = "/root/autodl-tmp/models/InternVL3-1B-hf"
+rmbench_dataset = "/root/autodl-tmp/datasets/rmbench"
+
+[storage]
+runs_root = "/root/autodl-tmp/outputs"
+hf_home = "/root/autodl-tmp/cache/huggingface"
+```
+
+系统盘较小的机器还应将临时文件和编译缓存放到数据盘：
+
+```bash
+export TMPDIR=/root/autodl-tmp/tmp
+export XDG_CACHE_HOME=/root/autodl-tmp/cache
+export TORCH_HOME=/root/autodl-tmp/cache/torch
+export TORCH_EXTENSIONS_DIR=/root/autodl-tmp/cache/torch_extensions
+export TRITON_CACHE_DIR=/root/autodl-tmp/cache/triton
+export CUDA_CACHE_PATH=/root/autodl-tmp/cache/cuda
+mkdir -p "$TMPDIR" "$XDG_CACHE_HOME" "$CUDA_CACHE_PATH"
+```
+
+训练命令的 `tee` 日志也应写入 `runs_root`。数据、模型和所有检查点均不需要放进代码仓库。

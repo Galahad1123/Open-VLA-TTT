@@ -74,7 +74,9 @@ bash scripts/train_rmbench_multi.sh \
 ```
 
 移除 `--dry-run` 才训练；加 `--smoke-steps 2` 可各阶段跑两步（batch改为1）。
-两入口共用 trainer，当前支持独立单卡工作站，不声称支持多卡 DDP。
+两入口共用 trainer；默认单卡，加 `--num-processes 2` 使用单机双卡 DDP。
+固定80k配方和命令见 [双卡快速开始](portable-training.md#双卡与固定-80k-更新预算)。
+上述表格为原有每任务曝光预算，不是新80k配方。
 `--stage stage1` 只跑第一阶段；`--stage stage2 --checkpoint <stage1/pretrained_model>`
 进行阶段切换。`--stage stage1|stage2 --resume <pretrained_model>` 是同阶段恢复。
 resume 不允许修改任务、数据、recipe、seed、总步数或 batch；跨机器迁移应保留

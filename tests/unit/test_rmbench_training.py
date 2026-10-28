@@ -52,9 +52,10 @@ def test_checkpoint_lineage(tmp_path):
         validate_lineage(tmp_path, identity, resume=True)
 
 
+@pytest.mark.parametrize("world_size", [1, 2])
 @pytest.mark.parametrize("full_dataset", [False, True])
 def test_recipe_checkpoint_interval_reaches_both_stages(
-    tmp_path, monkeypatch, capsys, full_dataset
+    tmp_path, monkeypatch, capsys, full_dataset, world_size
 ):
     import json
     import sys
@@ -119,14 +120,17 @@ def test_recipe_checkpoint_interval_reaches_both_stages(
             "single",
             "--run-name",
             "test",
+            "--num-processes",
+            str(world_size),
             "--dry-run",
         ],
     )
     training.main()
     output = capsys.readouterr().out
-    assert output.count("--save_freq=5000") == 2
-    assert "--steps=5000" in output
-    assert "--steps=80000" in output
+    assert f"--steps={5000 // world_size}" in output
+    assert f"--steps={80000 // world_size}" in output
+    assert f'"global_batch_size": {8 * world_size}' in output
+    assert not (tmp_path / "runs").exists()
     if full_dataset:
         assert output.count("--dataset.episodes=[1]") == 2
     else:
@@ -208,3 +212,78 @@ def test_lerobot_subset_keeps_source_stats_and_action_boundaries(tmp_path):
     np.testing.assert_array_equal(
         selected.meta.stats["action"]["mean"], full.meta.stats["action"]["mean"]
     )
+
+
+def test_budget_uses_global_batch_and_fixed_steps():
+    from lerobot_policy_vla_ttt.training.train_rmbench import stage_budget
+
+    assert training_budget(40000, 8, 9, world_size=2) == 22500
+    assert stage_budget({"batch_size": 4, "steps": 75000}, 9, 2) == (4, 75000)
+    assert stage_budget({"batch_size": 4, "chunks_per_task": 320000}, 9, 2) == (4, 360000)
+    assert stage_budget({"batch_size": 4, "steps": 75000}, 9, 2, smoke_steps=20) == (1, 20)
+    assert stage_budget(
+        {"batch_size": 4, "steps": 75000}, 9, 2, smoke_steps=20, smoke_use_recipe_batch=True
+    ) == (4, 20)
+    for settings in (
+        {"batch_size": 4, "steps": 0},
+        {"batch_size": 4, "steps": 5, "chunks_per_task": 20},
+    ):
+        with pytest.raises(ValueError):
+            stage_budget(settings, 9, 2)
+    with pytest.raises(ValueError):
+        training_budget(40000, 8, 9, world_size=0)
+
+
+def test_balanced_sampler_accelerate_shards_and_resumes_global_stream():
+    from accelerate.data_loader import BatchSamplerShard
+    from torch.utils.data import BatchSampler
+
+    def stream(rank, start=0):
+        sampler = BalancedTaskSampler([0, 40], [40, 400], task_by_episode=["a", "b"], seed=8)
+        sampler.load_state_dict({"epoch": 0, "start_index": start})
+        return list(
+            BatchSamplerShard(
+                BatchSampler(sampler, batch_size=4, drop_last=False),
+                num_processes=2,
+                process_index=rank,
+            )
+        )
+
+    full = list(BalancedTaskSampler([0, 40], [40, 400], task_by_episode=["a", "b"], seed=8))
+    ranks = [stream(0), stream(1)]
+    combined = [x for pair in zip(*ranks, strict=True) for batch in pair for x in batch]
+    assert combined == full  # Shard sample positions once; replacement can repeat frame IDs.
+    for rank in range(2):
+        assert stream(rank, start=80) == ranks[rank][10:]
+        assert 60 < sum(x < 40 for batch in ranks[rank] for x in batch) < 140
+
+
+@pytest.mark.parametrize("frames", [400, 399])
+def test_prepared_loader_resumes_after_epoch_zero_including_padding(frames):
+    import torch
+    from accelerate.data_loader import prepare_data_loader
+    from lerobot.datasets.sampler import compute_sampler_state
+    from torch.utils.data import DataLoader
+
+    def loader(rank, step=None):
+        sampler = BalancedTaskSampler(
+            [0, 40], [40, frames], task_by_episode=["a", "b"], seed=8, global_batch_size=8
+        )
+        if step is not None:
+            sampler.load_state_dict(compute_sampler_state(step, frames, 4, 2))
+        return prepare_data_loader(
+            DataLoader(list(range(frames)), batch_size=4, sampler=sampler),
+            device=torch.device("cpu"),
+            num_processes=2,
+            process_index=rank,
+            rng_types=[],
+        )
+
+    for rank in range(2):
+        full = loader(rank)
+        list(full)  # Epoch 0.
+        epoch1 = [batch.tolist() for batch in full]
+        epoch2 = [batch.tolist() for batch in full]
+        resumed = loader(rank, step=60)  # 50 updates/epoch, resume ten updates into epoch 1.
+        assert [batch.tolist() for batch in resumed] == epoch1[10:]
+        assert [batch.tolist() for batch in resumed] == epoch2

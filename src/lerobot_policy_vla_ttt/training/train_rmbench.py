@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import os
+import subprocess
 import sys
 from importlib import import_module
 from pathlib import Path
@@ -18,10 +19,25 @@ from lerobot_policy_vla_ttt.cli import local_processor_routing
 from lerobot_policy_vla_ttt.portability import configure_cache, read_machine
 
 
-def training_budget(chunks_per_task, batch_size, tasks):
-    if min(chunks_per_task, batch_size, tasks) <= 0:
-        raise ValueError("Budget, batch size and task count must be positive")
-    return math.ceil(chunks_per_task * tasks / batch_size)
+def training_budget(chunks_per_task, batch_size, tasks, world_size=1):
+    if min(chunks_per_task, batch_size, tasks, world_size) <= 0:
+        raise ValueError("Budget, batch size, task count and world size must be positive")
+    return math.ceil(chunks_per_task * tasks / (batch_size * world_size))
+
+
+def stage_budget(settings, tasks, world_size, *, smoke_steps=None, smoke_use_recipe_batch=False):
+    if ("steps" in settings) == ("chunks_per_task" in settings):
+        raise ValueError("Each stage requires exactly one of steps or chunks_per_task")
+    batch = settings["batch_size"]
+    budget = settings.get("steps", settings.get("chunks_per_task"))
+    if any(type(value) is not int or value <= 0 for value in (batch, budget, tasks, world_size)):
+        raise ValueError("Training budgets and batch sizes must be positive integers")
+    steps = settings.get("steps") or training_budget(budget, batch, tasks, world_size)
+    if smoke_steps is not None:
+        if type(smoke_steps) is not int or smoke_steps <= 0:
+            raise ValueError("Smoke steps must be positive")
+        return batch if smoke_use_recipe_batch else 1, smoke_steps
+    return batch, steps
 
 
 def select_episodes(preparation, tasks):
@@ -55,13 +71,15 @@ def validate_lineage(checkpoint, identity, *, resume):
 class BalancedTaskSampler(EpisodeAwareSampler):
     """Uniform task, then uniform eligible frame; deterministic resumable epochs."""
 
-    def __init__(self, starts, ends, *, task_by_episode, **kwargs):
+    def __init__(self, starts, ends, *, task_by_episode, global_batch_size=1, **kwargs):
         subset = kwargs.get("episode_indices_to_use")
         if len(task_by_episode) != len(starts) or (
             subset is not None and any(i < 0 or i >= len(starts) for i in subset)
         ):
             raise ValueError("Episode/task mapping mismatch")
         super().__init__(starts, ends, **kwargs)
+        self._resume_epoch = 0
+        self._padding = (-self._num_frames) % global_batch_size
         selected = set(range(len(starts))) if subset is None else set(subset)
         self.task_samplers = []
         for task in sorted(set(task_by_episode)):
@@ -71,15 +89,31 @@ class BalancedTaskSampler(EpisodeAwareSampler):
             options = dict(kwargs, episode_indices_to_use=ids)
             self.task_samplers.append(EpisodeAwareSampler(starts, ends, **options))
 
+    def load_state_dict(self, state):
+        super().load_state_dict(state)
+        self._resume_epoch = state["epoch"]
+
+    def set_epoch(self, epoch):
+        # DataLoaderShard starts its local iteration at zero even on resume.
+        super().set_epoch(self._resume_epoch + epoch)
+
     def _iter_epoch(self, epoch, start):
         generator = self._epoch_generator(epoch)
+        prefix = []
         # Regenerate consumed positions too: resume must preserve both random draws.
         for position in range(self._num_frames):
             task = int(torch.randint(len(self.task_samplers), (), generator=generator))
             sampler = self.task_samplers[task]
             frame = int(torch.randint(len(sampler), (), generator=generator))
+            index = sampler._frame_index(frame)
+            if position < self._padding:
+                prefix.append(index)
             if position >= start:
-                yield sampler._frame_index(frame)
+                yield index
+        # Pad from the ORIGINAL epoch prefix, not the resumed suffix. Otherwise
+        # Accelerate's even_batches changes the last rank's final batch on resume.
+        for position in range(self._padding):
+            yield prefix[position % len(prefix)]
 
 
 def main():
@@ -97,14 +131,25 @@ def main():
     parser.add_argument("--dataset-root", type=Path)
     parser.add_argument("--seed", type=int, default=1000)
     parser.add_argument("--smoke-steps", type=int)
+    parser.add_argument("--smoke-use-recipe-batch", action="store_true")
+    parser.add_argument(
+        "--num-processes", type=int, default=1, help="Local GPU count; batch_size is per GPU"
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     machine = read_machine(args.machine)
-    configure_cache(machine, __name__, sys.argv[1:])
+    configure_cache(machine, __spec__.name, sys.argv[1:])
     for key in ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE", "HF_DATASETS_OFFLINE"):
         os.environ[key] = "1"
-    if int(os.environ.get("WORLD_SIZE", "1")) != 1:
-        raise ValueError("This recipe currently supports independent single-GPU workstation runs")
+    worker_world_size = int(os.environ.get("WORLD_SIZE", "1"))
+    if args.num_processes < 1 or worker_world_size < 1:
+        raise ValueError("Process count must be positive")
+    if worker_world_size > 1 and (args.num_processes != 1 or args.stage == "both"):
+        raise ValueError("Use --num-processes in a plain Python launch for two-stage DDP")
+    world_size = max(worker_world_size, args.num_processes)
+    launch_workers = args.num_processes > 1
+    if args.smoke_use_recipe_batch and args.smoke_steps is None:
+        raise ValueError("--smoke-use-recipe-batch requires --smoke-steps")
     tasks = resolve_tasks(args.tasks)
     if args.mode == "single" and len(tasks) != 1:
         raise ValueError("Single-task entry requires exactly one task")
@@ -132,11 +177,22 @@ def main():
     checkpoint = args.checkpoint.resolve() if args.checkpoint else None
     if checkpoint and args.stage != "stage2":
         raise ValueError("--checkpoint is only for Stage1 to Stage2 initialization")
+    distributed = None
+    if worker_world_size > 1 and not args.dry_run:
+        from accelerate import PartialState
+
+        distributed = PartialState()
+    is_main = distributed is None or distributed.is_main_process
     original_argv = sys.argv
     for stage in stages:
         settings = recipe[stage]
-        batch = 1 if args.smoke_steps else settings["batch_size"]
-        steps = args.smoke_steps or training_budget(settings["chunks_per_task"], batch, len(tasks))
+        batch, steps = stage_budget(
+            settings,
+            len(tasks),
+            world_size,
+            smoke_steps=args.smoke_steps,
+            smoke_use_recipe_batch=args.smoke_use_recipe_batch,
+        )
         output = root / f"{args.run_name}-{stage}"
         identity = {
             "run_name": args.run_name,
@@ -148,6 +204,8 @@ def main():
             "batch_size": batch,
             "preparation_sha256": hashlib.sha256(preparation_bytes).hexdigest(),
         }
+        if world_size > 1:
+            identity.update(world_size=world_size, global_batch_size=batch * world_size)
         manifest_path = root / f"{args.run_name}-{stage}.rmbench.json"
         if args.resume:
             saved = json.loads(manifest_path.read_text())
@@ -156,7 +214,7 @@ def main():
             if not (args.resume / "train_config.json").is_file():
                 raise ValueError("Resume needs a complete LeRobot checkpoint")
             validate_lineage(args.resume, identity, resume=True)
-        elif output.exists() or manifest_path.exists():
+        elif is_main and (output.exists() or manifest_path.exists()):
             raise ValueError(f"Run already exists: {output}")
         common = {
             "dataset.repo_id": "local/rmbench",
@@ -223,25 +281,66 @@ def main():
             f"--{key}={json.dumps(value) if not isinstance(value, str) else value}"
             for key, value in common.items()
         ]
-        print(
-            json.dumps(
-                {
-                    "output": str(output),
-                    "identity": identity,
-                    "selected_episodes": episodes,
-                    "normalization": "source_dataset_stats",
-                    "expected_chunks_per_task": steps * batch / len(tasks),
-                    "argv": argv,
-                },
-                indent=2,
-            ),
-            flush=True,
-        )
-        if not args.dry_run:
+        if is_main:
+            print(
+                json.dumps(
+                    {
+                        "output": str(output),
+                        "identity": identity,
+                        "selected_episodes": episodes,
+                        "normalization": "source_dataset_stats",
+                        "world_size": world_size,
+                        "global_batch_size": batch * world_size,
+                        "expected_chunks_per_task": steps * batch * world_size / len(tasks),
+                        "argv": argv,
+                    },
+                    indent=2,
+                ),
+                flush=True,
+            )
+        if launch_workers and not args.dry_run:
+            # A fresh torchrun job per stage releases model, optimizer and process group.
+            command = [
+                sys.executable,
+                "-m",
+                "torch.distributed.run",
+                "--standalone",
+                f"--nproc_per_node={world_size}",
+                "--module",
+                __spec__.name,
+                "--machine",
+                str(args.machine),
+                "--recipe",
+                str(args.recipe),
+                "--tasks",
+                *tasks,
+                "--mode",
+                args.mode,
+                "--run-name",
+                args.run_name,
+                "--stage",
+                stage,
+                "--seed",
+                str(args.seed),
+            ]
+            for flag, value in (
+                ("--checkpoint", checkpoint),
+                ("--resume", args.resume),
+                ("--dataset-root", args.dataset_root),
+                ("--smoke-steps", args.smoke_steps),
+            ):
+                if value is not None:
+                    command.extend([flag, str(value)])
+            if args.smoke_use_recipe_batch:
+                command.append("--smoke-use-recipe-batch")
+            subprocess.run(command, check=True)
+        elif not args.dry_run:
             root.mkdir(parents=True, exist_ok=True)
-            if not args.resume:
+            if is_main and not args.resume:
                 with manifest_path.open("x") as stream:
                     json.dump(identity, stream, indent=2)
+            if distributed is not None:
+                distributed.wait_for_everyone()
             runner = import_module("lerobot.scripts.lerobot_train")
             evaluator = import_module("lerobot.scripts.lerobot_eval")
             original_sampler = runner.EpisodeAwareSampler
@@ -272,6 +371,7 @@ def main():
                 runner.EpisodeAwareSampler = functools.partial(
                     BalancedTaskSampler,
                     task_by_episode=[item["task"] for item in preparation["episodes"]],
+                    global_batch_size=batch * world_size if world_size > 1 else 1,
                 )
                 runner.save_checkpoint = save_with_identity
                 with local_processor_routing(runner, evaluator):
