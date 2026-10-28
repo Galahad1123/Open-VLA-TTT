@@ -448,7 +448,7 @@ bash scripts/train_rmbench_multi.sh \
 CUDA_VISIBLE_DEVICES=0,1 NCCL_P2P_DISABLE=1 NCCL_IB_DISABLE=1 \
 OMP_NUM_THREADS=4 bash scripts/train_rmbench_multi.sh \
   --machine configs/machine.local.toml \
-  --recipe configs/training/rmbench/all-80k.json \
+  --recipe configs/training/rmbench/all-80k-batch3.json \
   --tasks all --num-processes 2 --run-name all-80k-ddp-seed1000
 ```
 
@@ -459,7 +459,10 @@ OMP_NUM_THREADS=4 bash scripts/train_rmbench_multi.sh \
 RTX 4090 的 NCCL 环境变量禁用不支持的 P2P/IB 通路；其他硬件按其通信能力设置。
 
 `all-80k.json`：Stage1 5k步、每卡batch8；Stage2 75k步、每卡batch4；双卡全局batch分别16/8，
-每5k保存。训练预算是全局优化器更新次数，两张卡同步更新，不把步数相加。
+每5k保存。双4090实测约29h；若以24h左右为目标，使用上面命令的 `all-80k-batch3.json`，
+其Stage2每卡batch3、全局batch6，其余参数相同，短测外推约24–25h（不是硬性保证）。
+[双卡测试记录](experiments/2026-10-28-rmbench-dual-4090.md)包含显存、吞吐与恢复验证。
+训练预算是全局优化器更新次数，两张卡同步更新，不把步数相加。
 预测50/执行50沿用已完成的单任务评测设置；执行长度不改变训练loss。
 多任务均衡采样，所有进程产生同一全局样本流，再由 Accelerate 分片，不能另加 DistributedSampler。
 `--num-processes 2` 为每个阶段启动独立 torchrun 作业，失败时不会启动下一阶段。
