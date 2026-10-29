@@ -1,0 +1,1227 @@
+[
+  {
+    "episode": 500,
+    "task": "PickXtimes",
+    "repeats": 2,
+    "length": 529,
+    "instruction": "pick up the red cube and place it on the target, repeating this action two times, then press the button to stop"
+  },
+  {
+    "episode": 501,
+    "task": "PickXtimes",
+    "repeats": 3,
+    "length": 628,
+    "instruction": "pick up the blue cube and place it on the target, repeating this action three times, then press the button to stop"
+  },
+  {
+    "episode": 502,
+    "task": "PickXtimes",
+    "repeats": 2,
+    "length": 478,
+    "instruction": "pick up the red cube and place it on the target, repeating this action two times, then press the button to stop"
+  },
+  {
+    "episode": 504,
+    "task": "PickXtimes",
+    "repeats": 3,
+    "length": 645,
+    "instruction": "pick up the blue cube and place it on the target, repeating this action three times, then press the button to stop"
+  },
+  {
+    "episode": 505,
+    "task": "PickXtimes",
+    "repeats": 2,
+    "length": 576,
+    "instruction": "pick up the red cube and place it on the target, repeating this action two times, then press the button to stop"
+  },
+  {
+    "episode": 506,
+    "task": "PickXtimes",
+    "repeats": 2,
+    "length": 470,
+    "instruction": "pick up the green cube and place it on the target, repeating this action two times, then press the button to stop"
+  },
+  {
+    "episode": 508,
+    "task": "PickXtimes",
+    "repeats": 1,
+    "length": 332,
+    "instruction": "pick up the red cube and place it on the target, then press the button to stop"
+  },
+  {
+    "episode": 509,
+    "task": "PickXtimes",
+    "repeats": 3,
+    "length": 574,
+    "instruction": "pick up the green cube and place it on the target, repeating this action three times, then press the button to stop"
+  },
+  {
+    "episode": 510,
+    "task": "PickXtimes",
+    "repeats": 2,
+    "length": 447,
+    "instruction": "pick up the red cube and place it on the target, repeating this action two times, then press the button to stop"
+  },
+  {
+    "episode": 512,
+    "task": "PickXtimes",
+    "repeats": 1,
+    "length": 323,
+    "instruction": "pick up the green cube and place it on the target, then press the button to stop"
+  },
+  {
+    "episode": 513,
+    "task": "PickXtimes",
+    "repeats": 3,
+    "length": 568,
+    "instruction": "pick up the blue cube and place it on the target, repeating this action three times, then press the button to stop"
+  },
+  {
+    "episode": 514,
+    "task": "PickXtimes",
+    "repeats": 3,
+    "length": 556,
+    "instruction": "pick up the blue cube and place it on the target, repeating this action three times, then press the button to stop"
+  },
+  {
+    "episode": 516,
+    "task": "PickXtimes",
+    "repeats": 1,
+    "length": 348,
+    "instruction": "pick up the green cube and place it on the target, then press the button to stop"
+  },
+  {
+    "episode": 517,
+    "task": "PickXtimes",
+    "repeats": 2,
+    "length": 465,
+    "instruction": "pick up the red cube and place it on the target, repeating this action two times, then press the button to stop"
+  },
+  {
+    "episode": 518,
+    "task": "PickXtimes",
+    "repeats": 1,
+    "length": 302,
+    "instruction": "pick up the green cube and place it on the target, then press the button to stop"
+  },
+  {
+    "episode": 520,
+    "task": "PickXtimes",
+    "repeats": 2,
+    "length": 421,
+    "instruction": "pick up the red cube and place it on the target, repeating this action two times, then press the button to stop"
+  },
+  {
+    "episode": 521,
+    "task": "PickXtimes",
+    "repeats": 3,
+    "length": 622,
+    "instruction": "pick up the green cube and place it on the target, repeating this action three times, then press the button to stop"
+  },
+  {
+    "episode": 522,
+    "task": "PickXtimes",
+    "repeats": 3,
+    "length": 568,
+    "instruction": "pick up the green cube and place it on the target, repeating this action three times, then press the button to stop"
+  },
+  {
+    "episode": 524,
+    "task": "PickXtimes",
+    "repeats": 2,
+    "length": 462,
+    "instruction": "pick up the blue cube and place it on the target, repeating this action two times, then press the button to stop"
+  },
+  {
+    "episode": 525,
+    "task": "PickXtimes",
+    "repeats": 2,
+    "length": 438,
+    "instruction": "pick up the green cube and place it on the target, repeating this action two times, then press the button to stop"
+  },
+  {
+    "episode": 526,
+    "task": "PickXtimes",
+    "repeats": 3,
+    "length": 565,
+    "instruction": "pick up the green cube and place it on the target, repeating this action three times, then press the button to stop"
+  },
+  {
+    "episode": 528,
+    "task": "PickXtimes",
+    "repeats": 3,
+    "length": 616,
+    "instruction": "pick up the blue cube and place it on the target, repeating this action three times, then press the button to stop"
+  },
+  {
+    "episode": 529,
+    "task": "PickXtimes",
+    "repeats": 1,
+    "length": 304,
+    "instruction": "pick up the red cube and place it on the target, then press the button to stop"
+  },
+  {
+    "episode": 530,
+    "task": "PickXtimes",
+    "repeats": 1,
+    "length": 301,
+    "instruction": "pick up the blue cube and place it on the target, then press the button to stop"
+  },
+  {
+    "episode": 532,
+    "task": "PickXtimes",
+    "repeats": 3,
+    "length": 540,
+    "instruction": "pick up the green cube and place it on the target, repeating this action three times, then press the button to stop"
+  },
+  {
+    "episode": 533,
+    "task": "PickXtimes",
+    "repeats": 2,
+    "length": 420,
+    "instruction": "pick up the red cube and place it on the target, repeating this action two times, then press the button to stop"
+  },
+  {
+    "episode": 534,
+    "task": "PickXtimes",
+    "repeats": 3,
+    "length": 558,
+    "instruction": "pick up the red cube and place it on the target, repeating this action three times, then press the button to stop"
+  },
+  {
+    "episode": 536,
+    "task": "PickXtimes",
+    "repeats": 3,
+    "length": 609,
+    "instruction": "pick up the blue cube and place it on the target, repeating this action three times, then press the button to stop"
+  },
+  {
+    "episode": 537,
+    "task": "PickXtimes",
+    "repeats": 2,
+    "length": 418,
+    "instruction": "pick up the blue cube and place it on the target, repeating this action two times, then press the button to stop"
+  },
+  {
+    "episode": 538,
+    "task": "PickXtimes",
+    "repeats": 2,
+    "length": 401,
+    "instruction": "pick up the red cube and place it on the target, repeating this action two times, then press the button to stop"
+  },
+  {
+    "episode": 540,
+    "task": "PickXtimes",
+    "repeats": 1,
+    "length": 291,
+    "instruction": "pick up the green cube and place it on the target, then press the button to stop"
+  },
+  {
+    "episode": 541,
+    "task": "PickXtimes",
+    "repeats": 1,
+    "length": 266,
+    "instruction": "pick up the blue cube and place it on the target, then press the button to stop"
+  },
+  {
+    "episode": 542,
+    "task": "PickXtimes",
+    "repeats": 2,
+    "length": 420,
+    "instruction": "pick up the blue cube and place it on the target, repeating this action two times, then press the button to stop"
+  },
+  {
+    "episode": 544,
+    "task": "PickXtimes",
+    "repeats": 1,
+    "length": 300,
+    "instruction": "pick up the red cube and place it on the target, then press the button to stop"
+  },
+  {
+    "episode": 545,
+    "task": "PickXtimes",
+    "repeats": 3,
+    "length": 574,
+    "instruction": "pick up the green cube and place it on the target, repeating this action three times, then press the button to stop"
+  },
+  {
+    "episode": 546,
+    "task": "PickXtimes",
+    "repeats": 2,
+    "length": 439,
+    "instruction": "pick up the red cube and place it on the target, repeating this action two times, then press the button to stop"
+  },
+  {
+    "episode": 548,
+    "task": "PickXtimes",
+    "repeats": 3,
+    "length": 639,
+    "instruction": "pick up the red cube and place it on the target, repeating this action three times, then press the button to stop"
+  },
+  {
+    "episode": 549,
+    "task": "PickXtimes",
+    "repeats": 3,
+    "length": 584,
+    "instruction": "pick up the red cube and place it on the target, repeating this action three times, then press the button to stop"
+  },
+  {
+    "episode": 550,
+    "task": "PickXtimes",
+    "repeats": 1,
+    "length": 305,
+    "instruction": "pick up the blue cube and place it on the target, then press the button to stop"
+  },
+  {
+    "episode": 552,
+    "task": "PickXtimes",
+    "repeats": 1,
+    "length": 286,
+    "instruction": "pick up the red cube and place it on the target, then press the button to stop"
+  },
+  {
+    "episode": 553,
+    "task": "PickXtimes",
+    "repeats": 2,
+    "length": 405,
+    "instruction": "pick up the blue cube and place it on the target, repeating this action two times, then press the button to stop"
+  },
+  {
+    "episode": 554,
+    "task": "PickXtimes",
+    "repeats": 1,
+    "length": 293,
+    "instruction": "pick up the green cube and place it on the target, then press the button to stop"
+  },
+  {
+    "episode": 556,
+    "task": "PickXtimes",
+    "repeats": 3,
+    "length": 532,
+    "instruction": "pick up the green cube and place it on the target, repeating this action three times, then press the button to stop"
+  },
+  {
+    "episode": 557,
+    "task": "PickXtimes",
+    "repeats": 3,
+    "length": 581,
+    "instruction": "pick up the blue cube and place it on the target, repeating this action three times, then press the button to stop"
+  },
+  {
+    "episode": 558,
+    "task": "PickXtimes",
+    "repeats": 1,
+    "length": 316,
+    "instruction": "pick up the blue cube and place it on the target, then press the button to stop"
+  },
+  {
+    "episode": 560,
+    "task": "PickXtimes",
+    "repeats": 2,
+    "length": 439,
+    "instruction": "pick up the blue cube and place it on the target, repeating this action two times, then press the button to stop"
+  },
+  {
+    "episode": 561,
+    "task": "PickXtimes",
+    "repeats": 1,
+    "length": 315,
+    "instruction": "pick up the blue cube and place it on the target, then press the button to stop"
+  },
+  {
+    "episode": 562,
+    "task": "PickXtimes",
+    "repeats": 2,
+    "length": 437,
+    "instruction": "pick up the red cube and place it on the target, repeating this action two times, then press the button to stop"
+  },
+  {
+    "episode": 564,
+    "task": "PickXtimes",
+    "repeats": 2,
+    "length": 432,
+    "instruction": "pick up the blue cube and place it on the target, repeating this action two times, then press the button to stop"
+  },
+  {
+    "episode": 565,
+    "task": "PickXtimes",
+    "repeats": 2,
+    "length": 431,
+    "instruction": "pick up the red cube and place it on the target, repeating this action two times, then press the button to stop"
+  },
+  {
+    "episode": 566,
+    "task": "PickXtimes",
+    "repeats": 3,
+    "length": 573,
+    "instruction": "pick up the red cube and place it on the target, repeating this action three times, then press the button to stop"
+  },
+  {
+    "episode": 568,
+    "task": "PickXtimes",
+    "repeats": 3,
+    "length": 555,
+    "instruction": "pick up the blue cube and place it on the target, repeating this action three times, then press the button to stop"
+  },
+  {
+    "episode": 569,
+    "task": "PickXtimes",
+    "repeats": 3,
+    "length": 591,
+    "instruction": "pick up the blue cube and place it on the target, repeating this action three times, then press the button to stop"
+  },
+  {
+    "episode": 570,
+    "task": "PickXtimes",
+    "repeats": 1,
+    "length": 303,
+    "instruction": "pick up the red cube and place it on the target, then press the button to stop"
+  },
+  {
+    "episode": 572,
+    "task": "PickXtimes",
+    "repeats": 1,
+    "length": 279,
+    "instruction": "pick up the blue cube and place it on the target, then press the button to stop"
+  },
+  {
+    "episode": 573,
+    "task": "PickXtimes",
+    "repeats": 3,
+    "length": 560,
+    "instruction": "pick up the blue cube and place it on the target, repeating this action three times, then press the button to stop"
+  },
+  {
+    "episode": 574,
+    "task": "PickXtimes",
+    "repeats": 3,
+    "length": 546,
+    "instruction": "pick up the blue cube and place it on the target, repeating this action three times, then press the button to stop"
+  },
+  {
+    "episode": 576,
+    "task": "PickXtimes",
+    "repeats": 1,
+    "length": 303,
+    "instruction": "pick up the blue cube and place it on the target, then press the button to stop"
+  },
+  {
+    "episode": 577,
+    "task": "PickXtimes",
+    "repeats": 2,
+    "length": 438,
+    "instruction": "pick up the green cube and place it on the target, repeating this action two times, then press the button to stop"
+  },
+  {
+    "episode": 578,
+    "task": "PickXtimes",
+    "repeats": 1,
+    "length": 318,
+    "instruction": "pick up the blue cube and place it on the target, then press the button to stop"
+  },
+  {
+    "episode": 580,
+    "task": "PickXtimes",
+    "repeats": 1,
+    "length": 323,
+    "instruction": "pick up the blue cube and place it on the target, then press the button to stop"
+  },
+  {
+    "episode": 581,
+    "task": "PickXtimes",
+    "repeats": 3,
+    "length": 564,
+    "instruction": "pick up the blue cube and place it on the target, repeating this action three times, then press the button to stop"
+  },
+  {
+    "episode": 582,
+    "task": "PickXtimes",
+    "repeats": 2,
+    "length": 451,
+    "instruction": "pick up the blue cube and place it on the target, repeating this action two times, then press the button to stop"
+  },
+  {
+    "episode": 584,
+    "task": "PickXtimes",
+    "repeats": 1,
+    "length": 296,
+    "instruction": "pick up the green cube and place it on the target, then press the button to stop"
+  },
+  {
+    "episode": 585,
+    "task": "PickXtimes",
+    "repeats": 3,
+    "length": 539,
+    "instruction": "pick up the green cube and place it on the target, repeating this action three times, then press the button to stop"
+  },
+  {
+    "episode": 586,
+    "task": "PickXtimes",
+    "repeats": 1,
+    "length": 275,
+    "instruction": "pick up the red cube and place it on the target, then press the button to stop"
+  },
+  {
+    "episode": 588,
+    "task": "PickXtimes",
+    "repeats": 3,
+    "length": 560,
+    "instruction": "pick up the blue cube and place it on the target, repeating this action three times, then press the button to stop"
+  },
+  {
+    "episode": 589,
+    "task": "PickXtimes",
+    "repeats": 1,
+    "length": 307,
+    "instruction": "pick up the green cube and place it on the target, then press the button to stop"
+  },
+  {
+    "episode": 590,
+    "task": "PickXtimes",
+    "repeats": 3,
+    "length": 593,
+    "instruction": "pick up the blue cube and place it on the target, repeating this action three times, then press the button to stop"
+  },
+  {
+    "episode": 592,
+    "task": "PickXtimes",
+    "repeats": 2,
+    "length": 450,
+    "instruction": "pick up the blue cube and place it on the target, repeating this action two times, then press the button to stop"
+  },
+  {
+    "episode": 593,
+    "task": "PickXtimes",
+    "repeats": 2,
+    "length": 472,
+    "instruction": "pick up the red cube and place it on the target, repeating this action two times, then press the button to stop"
+  },
+  {
+    "episode": 594,
+    "task": "PickXtimes",
+    "repeats": 3,
+    "length": 554,
+    "instruction": "pick up the red cube and place it on the target, repeating this action three times, then press the button to stop"
+  },
+  {
+    "episode": 596,
+    "task": "PickXtimes",
+    "repeats": 2,
+    "length": 449,
+    "instruction": "pick up the red cube and place it on the target, repeating this action two times, then press the button to stop"
+  },
+  {
+    "episode": 597,
+    "task": "PickXtimes",
+    "repeats": 2,
+    "length": 437,
+    "instruction": "pick up the green cube and place it on the target, repeating this action two times, then press the button to stop"
+  },
+  {
+    "episode": 598,
+    "task": "PickXtimes",
+    "repeats": 1,
+    "length": 309,
+    "instruction": "pick up the green cube and place it on the target, then press the button to stop"
+  },
+  {
+    "episode": 700,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 482,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 701,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 608,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 702,
+    "task": "SwingXtimes",
+    "repeats": 1,
+    "length": 396,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then put it down on the left-side target, finally press the button to stop"
+  },
+  {
+    "episode": 703,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 535,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 704,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 488,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 705,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 490,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 706,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 392,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 707,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 504,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 708,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 538,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 709,
+    "task": "SwingXtimes",
+    "repeats": 1,
+    "length": 343,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then put it down on the left-side target, finally press the button to stop"
+  },
+  {
+    "episode": 710,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 380,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 711,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 486,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 712,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 461,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 713,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 390,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 714,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 401,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 715,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 485,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 716,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 547,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 717,
+    "task": "SwingXtimes",
+    "repeats": 1,
+    "length": 302,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then put it down on the left-side target, finally press the button to stop"
+  },
+  {
+    "episode": 718,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 417,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 719,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 466,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 720,
+    "task": "SwingXtimes",
+    "repeats": 1,
+    "length": 334,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then put it down on the left-side target, finally press the button to stop"
+  },
+  {
+    "episode": 721,
+    "task": "SwingXtimes",
+    "repeats": 1,
+    "length": 311,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then put it down on the left-side target, finally press the button to stop"
+  },
+  {
+    "episode": 722,
+    "task": "SwingXtimes",
+    "repeats": 1,
+    "length": 333,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then put it down on the left-side target, finally press the button to stop"
+  },
+  {
+    "episode": 723,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 493,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 724,
+    "task": "SwingXtimes",
+    "repeats": 1,
+    "length": 337,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then put it down on the left-side target, finally press the button to stop"
+  },
+  {
+    "episode": 725,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 535,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 726,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 398,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 727,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 459,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 728,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 482,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 729,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 379,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 730,
+    "task": "SwingXtimes",
+    "repeats": 1,
+    "length": 307,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then put it down on the left-side target, finally press the button to stop"
+  },
+  {
+    "episode": 731,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 490,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 732,
+    "task": "SwingXtimes",
+    "repeats": 1,
+    "length": 313,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then put it down on the left-side target, finally press the button to stop"
+  },
+  {
+    "episode": 733,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 378,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 734,
+    "task": "SwingXtimes",
+    "repeats": 1,
+    "length": 331,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then put it down on the left-side target, finally press the button to stop"
+  },
+  {
+    "episode": 735,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 449,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 736,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 475,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 737,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 465,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 738,
+    "task": "SwingXtimes",
+    "repeats": 1,
+    "length": 345,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then put it down on the left-side target, finally press the button to stop"
+  },
+  {
+    "episode": 739,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 453,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 740,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 392,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 741,
+    "task": "SwingXtimes",
+    "repeats": 1,
+    "length": 359,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then put it down on the left-side target, finally press the button to stop"
+  },
+  {
+    "episode": 742,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 393,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 743,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 499,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 744,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 411,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 745,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 422,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 746,
+    "task": "SwingXtimes",
+    "repeats": 1,
+    "length": 349,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then put it down on the left-side target, finally press the button to stop"
+  },
+  {
+    "episode": 747,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 538,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 748,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 492,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 749,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 536,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 750,
+    "task": "SwingXtimes",
+    "repeats": 1,
+    "length": 324,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then put it down on the left-side target, finally press the button to stop"
+  },
+  {
+    "episode": 751,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 453,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 752,
+    "task": "SwingXtimes",
+    "repeats": 1,
+    "length": 296,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then put it down on the left-side target, finally press the button to stop"
+  },
+  {
+    "episode": 753,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 467,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 754,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 471,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 755,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 524,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 756,
+    "task": "SwingXtimes",
+    "repeats": 1,
+    "length": 322,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then put it down on the left-side target, finally press the button to stop"
+  },
+  {
+    "episode": 757,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 407,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 758,
+    "task": "SwingXtimes",
+    "repeats": 1,
+    "length": 312,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then put it down on the left-side target, finally press the button to stop"
+  },
+  {
+    "episode": 759,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 488,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 760,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 408,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 761,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 494,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 762,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 423,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 763,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 492,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 764,
+    "task": "SwingXtimes",
+    "repeats": 1,
+    "length": 392,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then put it down on the left-side target, finally press the button to stop"
+  },
+  {
+    "episode": 765,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 433,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 766,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 395,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 767,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 570,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 768,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 478,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 769,
+    "task": "SwingXtimes",
+    "repeats": 1,
+    "length": 338,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then put it down on the left-side target, finally press the button to stop"
+  },
+  {
+    "episode": 770,
+    "task": "SwingXtimes",
+    "repeats": 1,
+    "length": 358,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then put it down on the left-side target, finally press the button to stop"
+  },
+  {
+    "episode": 771,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 490,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 772,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 412,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 773,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 391,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 774,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 410,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 775,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 497,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 776,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 428,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 777,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 420,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 778,
+    "task": "SwingXtimes",
+    "repeats": 1,
+    "length": 328,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then put it down on the left-side target, finally press the button to stop"
+  },
+  {
+    "episode": 779,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 464,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 780,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 523,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 781,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 397,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 782,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 386,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 783,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 555,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 784,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 456,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 785,
+    "task": "SwingXtimes",
+    "repeats": 1,
+    "length": 335,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then put it down on the left-side target, finally press the button to stop"
+  },
+  {
+    "episode": 786,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 439,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 787,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 462,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 788,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 445,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 789,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 506,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 790,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 438,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 791,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 459,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 792,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 476,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 793,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 491,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 794,
+    "task": "SwingXtimes",
+    "repeats": 2,
+    "length": 403,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion two times, finally press the button to stop"
+  },
+  {
+    "episode": 795,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 473,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 796,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 522,
+    "instruction": "pick up the blue cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 797,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 562,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  },
+  {
+    "episode": 798,
+    "task": "SwingXtimes",
+    "repeats": 1,
+    "length": 365,
+    "instruction": "pick up the green cube, move it to the top of the right-side target, then put it down on the left-side target, finally press the button to stop"
+  },
+  {
+    "episode": 799,
+    "task": "SwingXtimes",
+    "repeats": 3,
+    "length": 472,
+    "instruction": "pick up the red cube, move it to the top of the right-side target, then move it to the top of the left-side target, repeating this back and forth motion three times, finally press the button to stop"
+  }
+]

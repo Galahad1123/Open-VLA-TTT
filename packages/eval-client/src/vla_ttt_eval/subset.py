@@ -15,9 +15,9 @@ from .runner import run_episode
 TASKS = ("PickXtimes", "VideoUnmask", "PickHighlight", "ButtonUnmask", "BinFill", "SwingXtimes")
 
 
-def eligible(task, env):
+def eligible(task, env, repeats=None):
     if task in ("PickXtimes", "SwingXtimes"):
-        return int(env.num_repeats) == 1
+        return int(env.num_repeats) in ([1] if repeats is None else repeats)
     if task in ("VideoUnmask", "ButtonUnmask"):
         return int(env.configs[env.difficulty]["pick"]) == 1
     if task == "PickHighlight":
@@ -40,6 +40,15 @@ def load_plan(path):
     for task, spec in plan["tasks"].items():
         if task not in TASKS:
             raise ValueError(f"Unknown task: {task}")
+        repeats = spec.get("repeats")
+        if repeats is not None and (
+            task not in ("PickXtimes", "SwingXtimes")
+            or not isinstance(repeats, list)
+            or not repeats
+            or any(type(n) is not int or n not in range(1, 6) for n in repeats)
+            or len(set(repeats)) != len(repeats)
+        ):
+            raise ValueError(f"Invalid repeat selection: {task}")
         ids = spec["train_episodes"]
         if (
             not ids
@@ -72,6 +81,20 @@ def summarize(rows):
         if result["tasks"]
         else None
     )
+    repeat_groups = {}
+    for row in episodes:
+        if row.get("num_repeats") is not None:
+            key = f"{row['task']}/{row['num_repeats']}"
+            group = repeat_groups.setdefault(key, dict(episodes=0, successes=0))
+            group["episodes"] += 1
+            group["successes"] += int(row["success"])
+    if repeat_groups:
+        for group in repeat_groups.values():
+            group["success_rate"] = group["successes"] / group["episodes"]
+        result["repeat_groups"] = repeat_groups
+        result["repeat_macro_success_rate"] = sum(
+            g["success_rate"] for g in repeat_groups.values()
+        ) / len(repeat_groups)
     return result
 
 
@@ -154,8 +177,8 @@ def main():
 
     report(args.output, rows, False)
     with PolicyClient(args.server, benchmark="robomme", timeout=180) as client:
-        if client.metadata["implementation"] != "evo1_groot":
-            raise ValueError("This diagnostic protocol requires the memoryless evo1_groot baseline")
+        if client.metadata["implementation"] not in {"evo1_groot", "aqmem"}:
+            raise ValueError("Subset evaluation supports evo1_groot and aqmem")
         (args.output / "run.json").write_text(
             json.dumps(dict(config=config, policy=client.metadata), indent=2)
         )
@@ -166,7 +189,7 @@ def main():
                 for ep in candidates[task]:
                     try:
                         obs = env.reset(ep, args.seed + ep)
-                        matches = eligible(task, base_env(env))
+                        matches = eligible(task, base_env(env), plan["tasks"][task].get("repeats"))
                         if args.selection == "matched" and not matches:
                             if args.split == "train":
                                 raise ValueError(f"Train plan/scene mismatch: {task}/{ep}")
@@ -196,6 +219,9 @@ def main():
                             split=args.split,
                             matches_subset=matches,
                             instruction=env.task,
+                            num_repeats=int(base_env(env).num_repeats)
+                            if task in ("PickXtimes", "SwingXtimes")
+                            else None,
                             video=str(rec.path.relative_to(args.output)),
                             demo_video=str(rec.demo_path.relative_to(args.output))
                             if rec.demo_path

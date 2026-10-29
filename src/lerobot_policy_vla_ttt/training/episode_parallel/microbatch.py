@@ -11,6 +11,7 @@ from torch.nn.attention import SDPBackend, sdpa_kernel
 
 from ..flow_matching import flow_row_seeds
 from .data import derive_seed
+from .diagnostics import CURRENT
 from .engine import episode_rng
 
 
@@ -76,6 +77,9 @@ def backward_microbatch(policy, streams, *, decisions, seeds, recipe, backward, 
             supervised = torch.tensor(
                 [e is not None and e.supervised for e in events], device=device
             )
+            diag = CURRENT.get()
+            if diag is not None:
+                diag.mask = supervised
             with flow_row_seeds([derive_seed(seed, "flow_event", index) for seed in seeds]):
                 if policy.config.type == "aqmem":
                     num, count, memory = policy.forward_step(
@@ -115,4 +119,8 @@ def backward_microbatch(policy, streams, *, decisions, seeds, recipe, backward, 
             raise ValueError(f"Expected decisions {decisions}, got {seen}")
         if segment is not None and segment.requires_grad:
             backward(segment)
+    diag = CURRENT.get()
+    if diag is not None:
+        diag.state(memory)
+        diag.mask = None
     return metrics, None if memory is None else tuple(s.detach() for s in memory)

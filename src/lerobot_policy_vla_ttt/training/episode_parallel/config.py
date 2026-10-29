@@ -25,12 +25,15 @@ class Recipe:
     training_mode: str = "alternating"
     sampling_mode: str = "same_task"
     update_unit: str = "episode"
+    diagnostics_every: int = 0
     episode_microbatch_size: int | None = None
     freeze_vlm: bool = False
     task_groups: dict[str, list[int]] | None = None
     robomme_augmentation: str = "none"
 
     def __post_init__(self):
+        if type(self.diagnostics_every) is not int or self.diagnostics_every < 0:
+            raise ValueError("diagnostics_every must be a nonnegative integer")
         if self.episode_microbatch_size is not None:
             if type(self.episode_microbatch_size) is not int or self.episode_microbatch_size < 1:
                 raise ValueError("episode_microbatch_size must be positive or null")

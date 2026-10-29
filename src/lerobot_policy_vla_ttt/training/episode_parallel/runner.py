@@ -103,17 +103,22 @@ def run(
             error = f"Output initialization failed: {exc}"
     collective_error(error, accelerator.device)
     accelerator.wait_for_everyone()
+    from .diagnostics import Diagnostics
     from .progress import Progress
 
     progress = Progress(recipe, step, end, mode=progress_mode, enabled=accelerator.is_main_process)
     start_time = time.monotonic()
-    with progress:
+    with (
+        progress,
+        Diagnostics(recipe.diagnostics_every, accelerator.is_main_process) as diagnostics,
+    ):
         while step < end:
             started = time.monotonic()
             local = dict.fromkeys(("loss_sum", *COUNTERS), 0.0)
             error = None
             try:
                 phase = control.begin(step)
+                diagnostics.begin(step + 1)
                 global_samples = sampler.batch(step)
                 task_counts = Counter(source.episodes[s.episode_id].task for s in global_samples)
                 local_samples = global_samples[
@@ -182,7 +187,9 @@ def run(
             synchronize_gradients(policy)
             error = None
             try:
+                diagnostics.before_step(control.optimizers[phase], policy)
                 grad_norm = control.step()
+                diagnostic_row = diagnostics.after_step()
             except Exception as exc:
                 error = f"Optimizer update failed: {exc}"
             collective_error(error, accelerator.device)
@@ -235,6 +242,14 @@ def run(
                 try:
                     with (output / "metrics.jsonl").open("a") as log:
                         log.write(json.dumps(metrics, allow_nan=False) + "\n")
+                    if diagnostic_row is not None:
+                        with (output / "diagnostics.jsonl").open("a") as log:
+                            log.write(
+                                json.dumps(
+                                    dict(step=step, phase=phase, **diagnostic_row), allow_nan=False
+                                )
+                                + "\n"
+                            )
                     progress.update(metrics)
                 except Exception as exc:
                     error = f"Metrics write failed: {exc}"

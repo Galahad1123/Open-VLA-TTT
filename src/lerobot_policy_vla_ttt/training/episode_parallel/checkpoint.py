@@ -27,6 +27,7 @@ def normalize_saved_recipe(values):
         "sampling_mode": "same_task",
         "update_unit": "episode",
         "freeze_vlm": False,
+        "diagnostics_every": 0,
         "episode_microbatch_size": None,
         "task_groups": None,
         "robomme_augmentation": "none",
