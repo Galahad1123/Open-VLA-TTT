@@ -10,6 +10,7 @@ import traceback
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
 from pathlib import Path
 
+from .progress import OUTPUT, Output
 from .runtime import collective_error
 
 
@@ -55,7 +56,9 @@ def rank_log(path):
     """Tee OS stdout/stderr, including pre-existing logging handlers/native output."""
     sys.stdout.flush()
     sys.stderr.flush()
+    terminal_tty = os.isatty(2)
     streams = []
+    output_token = None
     lock = threading.Lock()
     with Path(path).open("xb", buffering=0) as log:
 
@@ -78,6 +81,22 @@ def rank_log(path):
                 thread = threading.Thread(target=pump, args=(reader, terminal), daemon=True)
                 thread.start()
                 streams.append((target, terminal, thread))
+            terminal_fd = streams[1][1]
+
+            def terminal_write(text):
+                os.write(terminal_fd, text.encode('utf-8'))
+
+            def log_write(text):
+                with lock:
+                    log.write(text.encode('utf-8'))
+
+            def columns():
+                try:
+                    return os.get_terminal_size(terminal_fd).columns
+                except OSError:
+                    return 80
+
+            output_token = OUTPUT.set(Output(terminal_write, log_write, terminal_tty, columns))
             # Python streams may have been redirected separately (e.g. by an
             # embedding caller); route them through the same captured OS pipes.
             with (
@@ -92,6 +111,8 @@ def rank_log(path):
                     traceback.print_exc()
                     raise
         finally:
+            if output_token is not None:
+                OUTPUT.reset(output_token)
             sys.stdout.flush()
             sys.stderr.flush()
             for target, terminal, _ in streams:

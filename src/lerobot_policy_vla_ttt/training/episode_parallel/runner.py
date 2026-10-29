@@ -38,6 +38,7 @@ def run(
     identity,
     resume=None,
     stop_after=None,
+    progress_mode="auto",
     launch=None,
     output_prepared=False,
 ):
@@ -114,132 +115,152 @@ def run(
             error = f"Output initialization failed: {exc}"
     collective_error(error, accelerator.device)
     accelerator.wait_for_everyone()
+    from .progress import Progress
+
+    progress = Progress(recipe, step, end, mode=progress_mode, enabled=accelerator.is_main_process)
     start_time = time.monotonic()
     retries = 0
-    while step < end:
-        started = time.monotonic()
-        local = dict.fromkeys(("loss_sum", *COUNTERS), 0.0)
-        error = None
-        try:
-            phase = control.begin(step)
-            if retries == 0:
-                global_samples = sampler.batch(step)
-                attempt_rng = rng_state(accelerator.device)
-            else:
-                restore_rng(attempt_rng, accelerator.device)
-            task_counts = Counter(source.episodes[s.episode_id].task for s in global_samples)
-            local_samples = global_samples[accelerator.process_index :: accelerator.num_processes]
-            prepared = prepare_chunks(policy, source, local_samples, pre) if chunk_updates else None
-        except Exception as exc:
-            error = f"Local batch preparation at step {step} failed: {type(exc).__name__}: {exc}"
-        collective_error(error, accelerator.device)
-        if chunk_updates:
-            valid_count = torch.tensor(
-                sum(n for _, _, n in prepared), device=accelerator.device, dtype=torch.int64
+    with progress:
+        while step < end:
+            started = time.monotonic()
+            local = dict.fromkeys(("loss_sum", *COUNTERS), 0.0)
+            error = None
+            try:
+                phase = control.begin(step)
+                if retries == 0:
+                    global_samples = sampler.batch(step)
+                    attempt_rng = rng_state(accelerator.device)
+                else:
+                    restore_rng(attempt_rng, accelerator.device)
+                task_counts = Counter(source.episodes[s.episode_id].task for s in global_samples)
+                local_samples = global_samples[
+                    accelerator.process_index :: accelerator.num_processes
+                ]
+                prepared = (
+                    prepare_chunks(policy, source, local_samples, pre) if chunk_updates else None
+                )
+            except Exception as exc:
+                error = (
+                    f"Local batch preparation at step {step} failed: {type(exc).__name__}: {exc}"
+                )
+            collective_error(error, accelerator.device)
+            if chunk_updates:
+                valid_count = torch.tensor(
+                    sum(n for _, _, n in prepared), device=accelerator.device, dtype=torch.int64
+                )
+                if distributed():
+                    dist.all_reduce(valid_count)
+                global_valid_count = int(valid_count)
+            error = None
+            try:
+                if chunk_updates:
+                    local = backward_chunks(
+                        policy,
+                        prepared,
+                        global_valid_count=global_valid_count,
+                        backward=control.precision.backward,
+                    )
+                    del prepared
+                else:
+                    for sample in local_samples:
+                        with episode_rng(sample.seed, accelerator.device):
+                            metrics, memory = backward_episode(
+                                policy,
+                                source.events(sample.episode_id, seed=sample.seed),
+                                decisions=source.decision_count(sample.episode_id),
+                                recipe=recipe,
+                                backward=control.precision.backward,
+                                preprocess=pre,
+                            )
+                        del memory
+                        for key in local:
+                            local[key] += metrics[key]
+            except Exception as exc:
+                error = (
+                    f"Local episode computation at step {step} failed: {type(exc).__name__}: {exc}"
+                )
+            collective_error(error, accelerator.device)
+            if not control.precision.prepare_gradients(policy):
+                retries += 1
+                if accelerator.is_main_process:
+                    print(
+                        f"FP16 overflow at step {step}; retry {retries}/16, "
+                        f"loss_scale={control.precision.scale}",
+                        flush=True,
+                    )
+                if retries >= 16:
+                    raise FloatingPointError("16 consecutive FP16 overflows; try --precision fp32")
+                continue
+            retries = 0
+            error = None
+            try:
+                grad_norm = control.step()
+            except Exception as exc:
+                error = f"Optimizer update failed: {exc}"
+            collective_error(error, accelerator.device)
+            step += 1
+            values = torch.tensor(
+                list(local.values()), dtype=torch.float64, device=accelerator.device
             )
             if distributed():
-                dist.all_reduce(valid_count)
-            global_valid_count = int(valid_count)
-        error = None
-        try:
-            if chunk_updates:
-                local = backward_chunks(
-                    policy,
-                    prepared,
-                    global_valid_count=global_valid_count,
-                    backward=control.precision.backward,
-                )
-                del prepared
-            else:
-                for sample in local_samples:
-                    with episode_rng(sample.seed, accelerator.device):
-                        metrics, memory = backward_episode(
-                            policy,
-                            source.events(sample.episode_id, seed=sample.seed),
-                            decisions=source.decision_count(sample.episode_id),
-                            recipe=recipe,
-                            backward=control.precision.backward,
-                            preprocess=pre,
-                        )
-                    del memory
-                    for key in local:
-                        local[key] += metrics[key]
-        except Exception as exc:
-            error = f"Local episode computation at step {step} failed: {type(exc).__name__}: {exc}"
-        collective_error(error, accelerator.device)
-        if not control.precision.prepare_gradients(policy):
-            retries += 1
-            if accelerator.is_main_process:
-                print(
-                    f"FP16 overflow at step {step}; retry {retries}/16, "
-                    f"loss_scale={control.precision.scale}",
-                    flush=True,
-                )
-            if retries >= 16:
-                raise FloatingPointError("16 consecutive FP16 overflows; try --precision fp32")
-            continue
-        retries = 0
-        error = None
-        try:
-            grad_norm = control.step()
-        except Exception as exc:
-            error = f"Optimizer update failed: {exc}"
-        collective_error(error, accelerator.device)
-        step += 1
-        values = torch.tensor(list(local.values()), dtype=torch.float64, device=accelerator.device)
-        if distributed():
-            dist.all_reduce(values, op=dist.ReduceOp.SUM)
-        metrics = dict(zip(local, values.tolist(), strict=True))
-        metrics["loss"] = metrics.pop("loss_sum") / (
-            metrics["supervised_scalars"] if chunk_updates else recipe.global_batch_size
-        )
-        for key in COUNTERS:
-            metrics[key] = int(metrics[key])
-            totals[key] += metrics[key]
-        metrics.update(
-            step=step,
-            phase=phase,
-            loss_scale=control.precision.scale,
-            skipped_updates=control.precision.skipped_updates,
-            phase_updates=control.counts.copy(),
-            global_task_count=len(task_counts),
-            global_task_counts=dict(task_counts),
-            grad_norm=grad_norm,
-            totals=totals.copy(),
-            update_seconds=time.monotonic() - started,
-            run_seconds=time.monotonic() - start_time,
-            learning_rates={
-                str(i): g["lr"] for i, g in enumerate(control.optimizers[phase].param_groups)
-            },
-            optimizer_groups=[
-                {k: g[k] for k in ("category", "lr", "peak_lr", "weight_decay")}
-                for g in control.optimizers[phase].param_groups
-            ],
-        )
-        if chunk_updates:
-            metrics["stream_positions"] = [
-                {"slot": sample.slot, "episode_id": sample.episode_id, "decision": sample.decision}
-                for sample in global_samples
-            ]
-        error = None
-        if accelerator.is_main_process:
-            try:
-                with (output / "metrics.jsonl").open("a") as log:
-                    log.write(json.dumps(metrics, allow_nan=False) + "\n")
-                print(json.dumps(metrics), flush=True)
-            except Exception as exc:
-                error = f"Metrics write failed: {exc}"
-        collective_error(error, accelerator.device)
-        if step % recipe.save_every == 0 or step == end:
-            save_checkpoint(
-                output / f"step-{step:08d}",
-                policy,
-                control,
-                pre,
-                post,
-                accelerator,
-                recipe=recipe,
-                identity=identity,
-                totals=totals,
+                dist.all_reduce(values, op=dist.ReduceOp.SUM)
+            metrics = dict(zip(local, values.tolist(), strict=True))
+            metrics["loss"] = metrics.pop("loss_sum") / (
+                metrics["supervised_scalars"] if chunk_updates else recipe.global_batch_size
             )
+            for key in COUNTERS:
+                metrics[key] = int(metrics[key])
+                totals[key] += metrics[key]
+            metrics.update(
+                step=step,
+                phase=phase,
+                loss_scale=control.precision.scale,
+                skipped_updates=control.precision.skipped_updates,
+                phase_updates=control.counts.copy(),
+                global_task_count=len(task_counts),
+                global_task_counts=dict(task_counts),
+                grad_norm=grad_norm,
+                totals=totals.copy(),
+                update_seconds=time.monotonic() - started,
+                run_seconds=time.monotonic() - start_time,
+                learning_rates={
+                    str(i): g["lr"] for i, g in enumerate(control.optimizers[phase].param_groups)
+                },
+                optimizer_groups=[
+                    {k: g[k] for k in ("category", "lr", "peak_lr", "weight_decay")}
+                    for g in control.optimizers[phase].param_groups
+                ],
+            )
+            if chunk_updates:
+                metrics["stream_positions"] = [
+                    {
+                        "slot": sample.slot,
+                        "episode_id": sample.episode_id,
+                        "decision": sample.decision,
+                    }
+                    for sample in global_samples
+                ]
+            error = None
+            if accelerator.is_main_process:
+                try:
+                    with (output / "metrics.jsonl").open("a") as log:
+                        log.write(json.dumps(metrics, allow_nan=False) + "\n")
+                    progress.update(metrics)
+                except Exception as exc:
+                    error = f"Metrics write failed: {exc}"
+            collective_error(error, accelerator.device)
+            if step % recipe.save_every == 0 or step == end:
+                progress.saving()
+                save_checkpoint(
+                    output / f"step-{step:08d}",
+                    policy,
+                    control,
+                    pre,
+                    post,
+                    accelerator,
+                    recipe=recipe,
+                    identity=identity,
+                    totals=totals,
+                )
+                progress.saved()
     return {"step": step, "counts": control.counts.copy(), "totals": totals.copy()}

@@ -148,6 +148,12 @@ def main(argv=None):
         choices=tuple(DTYPES),
         help="Default bf16; resume inherits checkpoint precision. V100: fp16 or fp32",
     )
+    parser.add_argument(
+        "--progress",
+        choices=["auto", "bar", "plain", "off"],
+        default="auto",
+        help="Console progress only; auto selects bar on TTY, periodic text otherwise",
+    )
     parser.add_argument("--cpu", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
@@ -517,6 +523,7 @@ def _execute_run(
         identity=identity,
         resume=args.resume,
         stop_after=args.stop_after,
+        progress_mode=getattr(args, "progress", "auto"),
         launch=launch,
         output_prepared=True,
     )
