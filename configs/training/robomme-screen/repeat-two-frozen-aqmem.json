@@ -2,7 +2,7 @@
   "training_mode": "joint",
   "sampling_mode": "mixed_tasks",
   "update_unit": "episode",
-  "steps": 2000,
+  "steps": 1200,
   "global_batch_size": 6,
   "tbptt_events": 8,
   "execution": 10,
