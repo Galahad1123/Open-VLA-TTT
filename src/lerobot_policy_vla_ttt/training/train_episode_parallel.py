@@ -145,6 +145,12 @@ def main(argv=None):
     parser.add_argument(
         "--stop-after", type=int, help="Stop after this many updates, retaining full schedule"
     )
+    parser.add_argument(
+        "--progress",
+        choices=["auto", "bar", "plain", "off"],
+        default="auto",
+        help="Console progress only; auto selects bar on TTY, periodic text otherwise",
+    )
     parser.add_argument("--cpu", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
@@ -500,6 +506,7 @@ def _execute_run(
         identity=identity,
         resume=args.resume,
         stop_after=args.stop_after,
+        progress_mode=getattr(args, "progress", "auto"),
         launch=launch,
         output_prepared=True,
     )
