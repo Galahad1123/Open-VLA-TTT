@@ -386,7 +386,8 @@ def test_cli_real_checkpoint_processors_and_resume(monkeypatch, tmp_path, benchm
         rtol=0,
     )
     log = (tmp_path / "second/logs/rank-0.log").read_text()
-    assert '"step": 2' in log
+    assert "complete 2/2" in log
+    assert '"step": 2' not in log
     manifest = json.loads((tmp_path / "second/run.json").read_text())
     assert manifest["launch"]["paths"]["dataset_root"] == str(moved_dataset)
     assert manifest["launch"]["environment"]["versions"]["torch"]
