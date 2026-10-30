@@ -10,6 +10,9 @@ class AQMemActionHead(ObservationActionHead):
         padding = ~context_mask if block.cross_attention else None
         attended = block.attention(query, kv, kv, key_padding_mask=padding, need_weights=False)[0]
         tokens = tokens + block.dropout(attended)
+        # Evaluation-only: writes and fast-state updates remain unchanged.
+        if getattr(self, "disable_memory_output", False):
+            return tokens
         residual = self.action_gates[i].tanh() * self.memories[i].read(attended, cache.memory[i])
         record_read(i, tokens, residual)
         return tokens + residual

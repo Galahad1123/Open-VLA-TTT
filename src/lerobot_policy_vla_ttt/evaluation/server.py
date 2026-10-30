@@ -110,7 +110,14 @@ def main():
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--n-action-steps", type=int, default=10)
+    parser.add_argument(
+        "--disable-memory-output",
+        action="store_true",
+        help="AQMEM ablation: preserve writes, bypass memory read residuals",
+    )
     args = parser.parse_args()
+    if args.disable_memory_output and args.implementation != "aqmem":
+        parser.error("--disable-memory-output requires --implementation aqmem")
     from ..portability import configure_cache, read_machine
 
     try:
@@ -129,6 +136,16 @@ def main():
         args.n_action_steps,
         vlm_path=vlm_path,
     )
+    if args.disable_memory_output:
+        from ..models.aqmem.action_head import AQMemActionHead
+
+        heads = [m for m in policy.policy.modules() if isinstance(m, AQMemActionHead)]
+        if not heads:
+            raise RuntimeError("No AQMEM action head found for output ablation")
+        for head in heads:
+            head.disable_memory_output = True
+        policy.metadata["evaluation_ablation"] = "no-memory-output"
+        policy.metadata["ablation_action_heads"] = len(heads)
     print(f"Serving {policy.metadata} on {args.host}:{args.port}", flush=True)
     with make_server(policy, args.host, args.port) as server:
         server.serve_forever()
