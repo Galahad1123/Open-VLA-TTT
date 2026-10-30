@@ -4,6 +4,16 @@ policy 使用项目 `.venv`，仿真使用本目录 `.venv`。本机 RTX PRO 500
 
 ## 安装
 
+Linux 主机需提供 NVIDIA Vulkan 渲染驱动及系统库；仅 `nvidia-smi` 或 CUDA 可用不足以确认仿真可用。Ubuntu 最小容器可先安装：
+
+```bash
+sudo apt-get install -y --no-install-recommends libvulkan1 libegl1 ffmpeg
+# 如果 NVIDIA ICD 位于 /etc（先确认此文件存在），在运行仿真时设置：
+export VK_ICD_FILENAMES=/etc/vulkan/icd.d/nvidia_icd.json
+```
+
+4090x2 远端曾因缺少 `libEGL.so.1` 出现 `failed to find a rendering device`；补装 `libegl1` 后恢复。`missing pytorch3d` 是上游对可选点云依赖的提示，不是 RGB 评测失败的原因。
+
 从仓库根目录运行：
 
 ```bash
