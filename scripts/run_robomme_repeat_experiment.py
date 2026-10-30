@@ -13,13 +13,16 @@ def main():
     from lerobot_policy_vla_ttt.portability import read_machine
 
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--kind", choices=["baseline", "aqmem"], required=True)
+    p.add_argument("--kind", choices=["baseline", "aqmem", "mag"], required=True)
     p.add_argument("--machine", type=Path, required=True)
     p.add_argument("--checkpoint", type=Path, required=True)
     p.add_argument("--run-name", required=True)
     p.add_argument("--probe", action="store_true")
+    p.add_argument("--probe-updates", type=int, default=30)
     p.add_argument("--dry-run", action="store_true")
     args = p.parse_args()
+    if args.probe_updates < 1:
+        p.error("--probe-updates must be positive")
     root = Path(__file__).resolve().parents[1]
     checkpoint = args.checkpoint.expanduser().resolve()
     for name in [
@@ -31,7 +34,7 @@ def main():
         if not (checkpoint / name).is_file():
             raise FileNotFoundError(checkpoint / name)
     if json.loads((checkpoint / "config.json").read_text())["type"] != "evo1_groot":
-        raise ValueError("Both arms must initialize from the common baseline")
+        raise ValueError("All arms must initialize from the common baseline")
     machine = read_machine(args.machine)
     output = Path(machine["storage"]["runs_root"]) / args.run_name
     if output.exists():
@@ -46,7 +49,7 @@ def main():
         "--checkpoint",
         str(checkpoint),
         "--architecture",
-        "aqmem" if args.kind == "aqmem" else "evo1_groot",
+        "evo1_groot" if args.kind == "baseline" else args.kind,
         "--benchmark",
         "robomme",
         "--recipe",
@@ -56,13 +59,21 @@ def main():
         "--progress",
         "plain",
     ]
-    if args.kind == "aqmem":
+    if args.kind in {"aqmem", "mag"}:
         command += [
             "--memory-config",
-            str(root / "configs/training/robomme-screen/multitask-six-frozen-memory.json"),
+            str(
+                root
+                / "configs/training/robomme-screen"
+                / (
+                    "repeat-two-frozen-mag-memory.json"
+                    if args.kind == "mag"
+                    else "multitask-six-frozen-memory.json"
+                )
+            ),
         ]
     if args.probe:
-        command += ["--stop-after", "30"]
+        command += ["--stop-after", str(args.probe_updates)]
     if args.dry_run:
         print(json.dumps(dict(command=command, output=str(output)), indent=2))
         return

@@ -27,11 +27,16 @@ class Recipe:
     update_unit: str = "episode"
     diagnostics_every: int = 0
     episode_microbatch_size: int | None = None
+    activation_offload: bool = False
     freeze_vlm: bool = False
     task_groups: dict[str, list[int]] | None = None
     robomme_augmentation: str = "none"
 
     def __post_init__(self):
+        if type(self.activation_offload) is not bool:
+            raise ValueError("activation_offload must be boolean")
+        if self.activation_offload and self.episode_microbatch_size is None:
+            raise ValueError("activation_offload requires episode microbatching")
         if type(self.diagnostics_every) is not int or self.diagnostics_every < 0:
             raise ValueError("diagnostics_every must be a nonnegative integer")
         if self.episode_microbatch_size is not None:

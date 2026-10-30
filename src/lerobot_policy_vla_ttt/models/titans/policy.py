@@ -77,7 +77,10 @@ class TitansPolicy(PreTrainedPolicy):
         write_mask=None,
         supervision_mask=None,
         reset_mask=None,
+        loss_reduction="sum",
     ):
+        if loss_reduction not in {"sum", "none"}:
+            raise ValueError("loss_reduction must be sum or none")
         if not self.config.memory_enabled and self.config.memory_training == "memory_only":
             raise ValueError("memory_only training requires memory_enabled=True")
         states, _ = self._prepare_state(batch)
@@ -108,6 +111,8 @@ class TitansPolicy(PreTrainedPolicy):
                     replace(s, decision_index=s.decision_index + decision) for s in updated
                 )
             if supervision_mask is not None and not supervision_mask.any():
+                if loss_reduction == "none":
+                    return context.new_zeros((len(states),)), action_mask.sum((1, 2)), updated
                 return context.new_zeros(()), action_mask.sum(), updated
             pred, noise = self.model.action_head(
                 context,
@@ -120,6 +125,8 @@ class TitansPolicy(PreTrainedPolicy):
         pred = pred.view_as(actions).float()
         target = actions.float() - noise.float()
         error = (pred - target).square().masked_fill(~action_mask, 0)
+        if loss_reduction == "none":
+            return error.sum((1, 2)), action_mask.sum((1, 2)), updated
         return error.sum(), action_mask.sum(), updated
 
     def forward(self, batch, reduction="mean"):

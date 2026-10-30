@@ -4,6 +4,7 @@ Event clocks and TBPTT boundaries are relative to each episode's start. Flow
 randomness is keyed by episode seed and event index, independent of batch size.
 """
 
+from contextlib import nullcontext
 from itertools import zip_longest
 
 import torch
@@ -38,9 +39,11 @@ def backward_microbatch(policy, streams, *, decisions, seeds, recipe, backward, 
         raise ValueError("Invalid episode microbatch")
     if min(decisions) < 1:
         raise ValueError("Each episode needs supervision")
-    if policy.config.type not in {"evo1_groot", "aqmem"}:
-        raise ValueError("Experimental batching supports evo1_groot and aqmem only")
-    if any(p.requires_grad for p in policy.model.embedder.parameters()):
+    if policy.config.type not in {"evo1_groot", "aqmem", "mag"}:
+        raise ValueError("Experimental batching supports evo1_groot, aqmem and mag only")
+    # MAG connections live inside the embedder; only pretrained VLM weights freeze.
+    backbone = policy.model.embedder.model if policy.config.type == "mag" else policy.model.embedder
+    if any(p.requires_grad for p in backbone.parameters()):
         raise ValueError("Experimental batching requires frozen VLM")
     device = next(policy.parameters()).device
     seen = [0] * len(streams)
@@ -49,6 +52,9 @@ def backward_microbatch(policy, streams, *, decisions, seeds, recipe, backward, 
     with (
         episode_rng(derive_seed(seeds[0], "microbatch_dropout"), device),
         sdpa_kernel(SDPBackend.MATH),
+        torch.autograd.graph.save_on_cpu(pin_memory=False)
+        if recipe.activation_offload
+        else nullcontext(),
     ):
         for index, events in enumerate(zip_longest(*streams)):
             live = [e for e in events if e is not None]
@@ -81,7 +87,7 @@ def backward_microbatch(policy, streams, *, decisions, seeds, recipe, backward, 
             if diag is not None:
                 diag.mask = supervised
             with flow_row_seeds([derive_seed(seed, "flow_event", index) for seed in seeds]):
-                if policy.config.type == "aqmem":
+                if policy.config.type in {"aqmem", "mag"}:
                     num, count, memory = policy.forward_step(
                         batch,
                         memory,

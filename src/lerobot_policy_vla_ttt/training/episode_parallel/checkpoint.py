@@ -28,6 +28,7 @@ def normalize_saved_recipe(values):
         "update_unit": "episode",
         "freeze_vlm": False,
         "diagnostics_every": 0,
+        "activation_offload": False,
         "episode_microbatch_size": None,
         "task_groups": None,
         "robomme_augmentation": "none",

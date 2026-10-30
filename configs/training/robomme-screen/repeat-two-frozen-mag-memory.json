@@ -1,0 +1,13 @@
+{
+  "memory_update_rule": "t2mem_adaptive",
+  "memory_layers": [
+    10,
+    12
+  ],
+  "memory_dim": 128,
+  "memory_hidden_dim": 256,
+  "memory_learning_rate": 0.1,
+  "memory_input": "all",
+  "memory_granularity": "observation",
+  "num_persistent_tokens": 4
+}

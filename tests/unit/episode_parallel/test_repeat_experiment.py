@@ -132,3 +132,22 @@ def test_committed_recipes_match_and_sample_all_six_strata():
     task = {e.index: e.task for e in episodes}
     for step in range(20):
         assert {task[s.episode_id] for s in sampler.batch(step)} == set(groups)
+
+
+def test_mag_recipe_preserves_repeat_training_budget():
+    import json
+    from dataclasses import asdict
+
+    from lerobot_policy_vla_ttt.training.episode_parallel.checkpoint import normalize_saved_recipe
+
+    root = Path("configs/training/robomme-screen")
+    aq = json.loads((root / "repeat-two-frozen-aqmem.json").read_text())
+    mag = json.loads((root / "repeat-two-frozen-mag.json").read_text())
+    assert mag.pop("activation_offload") is True
+    assert mag.pop("episode_microbatch_size") == 1
+    aq.pop("episode_microbatch_size")
+    assert mag == aq
+    assert normalize_saved_recipe({})["activation_offload"] is False
+    with pytest.raises(ValueError, match="microbatch"):
+        Recipe(activation_offload=True)
+    assert asdict(Recipe())["activation_offload"] is False
