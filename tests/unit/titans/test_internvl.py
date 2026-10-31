@@ -130,3 +130,52 @@ def test_bfloat16_vlm_keeps_fast_weights_float32(setup, monkeypatch):
     assert p.model.embedder.connections["0"].memory.fast.w1.grad.abs().sum() > 0
     p.eval()
     assert p.predict_action_chunk(batch()).isfinite().all()
+
+
+def test_frozen_vision_does_not_retain_input_hook_graph(setup, monkeypatch):
+    patch_assets(monkeypatch)
+    cfg = replace(
+        setup.config,
+        enable_gradient_checkpointing=True,
+        apply_training_stage_defaults=False,
+        finetune_vlm=False,
+        finetune_language_model=False,
+        finetune_vision_model=False,
+        finetune_action_head=True,
+        memory_training="joint",
+    )
+    p = setup.policy_class(cfg).train()
+    reference = deepcopy(p)
+    reference.model.embedder.model.get_image_features = torch.enable_grad()(
+        reference.model.embedder.model.get_image_features
+    )
+    native = p.model.embedder.model
+    original = native.get_image_features
+    observed = []
+
+    def capture(*args, **kwargs):
+        result = original(*args, **kwargs)
+        observed.append((torch.is_grad_enabled(), result.pooler_output.requires_grad))
+        return result
+
+    monkeypatch.setattr(native, "get_image_features", capture)
+    data = batch()
+    torch.manual_seed(111)
+    n, c, _ = p.forward_step(data)
+    assert observed and not any(grad or requires for grad, requires in observed)
+    (n / c).backward()
+    assert all(v.grad is None for v in native.parameters())
+    assert any(
+        v.grad is not None and v.grad.abs().sum() > 0
+        for v in p.model.embedder.connections.parameters()
+    )
+
+    torch.manual_seed(111)
+    expected, expected_count, _ = reference.forward_step(data)
+    (expected / expected_count).backward()
+    torch.testing.assert_close(n, expected)
+    for (name, a), (_, b) in zip(p.named_parameters(), reference.named_parameters(), strict=True):
+        if a.requires_grad:
+            assert (a.grad is None) == (b.grad is None), name
+            if a.grad is not None:
+                torch.testing.assert_close(a.grad, b.grad, rtol=1e-4, atol=1e-6, msg=name)

@@ -143,8 +143,8 @@ def test_mag_recipe_preserves_repeat_training_budget():
     root = Path("configs/training/robomme-screen")
     aq = json.loads((root / "repeat-two-frozen-aqmem.json").read_text())
     mag = json.loads((root / "repeat-two-frozen-mag.json").read_text())
-    assert mag.pop("activation_offload") is True
-    assert mag.pop("episode_microbatch_size") == 1
+    assert mag.pop("activation_offload") is False
+    assert mag.pop("episode_microbatch_size") == 6
     aq.pop("episode_microbatch_size")
     assert mag == aq
     assert normalize_saved_recipe({})["activation_offload"] is False

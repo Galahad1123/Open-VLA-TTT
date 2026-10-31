@@ -207,7 +207,7 @@
       799
     ]
   },
-  "episode_microbatch_size": 1,
+  "episode_microbatch_size": 6,
   "diagnostics_every": 50,
-  "activation_offload": true
+  "activation_offload": false
 }

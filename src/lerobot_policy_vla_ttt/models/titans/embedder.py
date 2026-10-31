@@ -4,6 +4,8 @@ Image-feature replacement follows installed Transformers InternVLModel.forward.
 The Evo-1 snapshot and installed Transformers files are never modified.
 """
 
+from contextlib import nullcontext
+
 import torch
 from torch import nn
 
@@ -83,7 +85,16 @@ class TitansEmbedder(InternVL3Embedder):
             self.device,
         )
         embeddings = self.model.get_input_embeddings()(ids)
-        images = self.model.get_image_features(pixels, return_dict=True).pooler_output
+        # Input-grad hooks can mark patch embeddings trainable even when all
+        # vision weights are frozen. In eval mode HF vision checkpointing is off,
+        # so such graphs otherwise accumulate across the entire TBPTT segment.
+        vision_grad = any(
+            p.requires_grad
+            for module in (self.model.vision_tower, self.model.multi_modal_projector)
+            for p in module.parameters()
+        )
+        with nullcontext() if vision_grad else torch.no_grad():
+            images = self.model.get_image_features(pixels, return_dict=True).pooler_output
         images = images.to(embeddings)
         placeholders = self.model.get_placeholder_mask(
             ids, inputs_embeds=embeddings, image_features=images
