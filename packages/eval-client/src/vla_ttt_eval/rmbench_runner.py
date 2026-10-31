@@ -7,12 +7,14 @@ import os
 import subprocess
 import sys
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 import numpy as np
 
 from .client import PolicyClient
 from .rmbench import UPSTREAM_REVISION, canonical_observation, resolve_tasks, validate_action
+from .rmbench_diagnostics import EpisodeDiagnostics
 from .rmbench_video import H264Video
 
 
@@ -110,6 +112,7 @@ def evaluate(
     describe,
     start_episode=0,
     end_episode=None,
+    diagnostics=True,
 ):
     """Match official seed filtering; exceptions are recorded, never policy failures."""
     accepted = successes = 0
@@ -149,7 +152,18 @@ def evaluate(
             observation = env.get_obs()
             frame = observation["observation"]["head_camera"]["rgb"]
             # Decision-rate head-camera video; policy still receives all three cameras.
-            with H264Video(video, frame.shape[:2]) as writer:
+            diagnostic_path = (
+                output / "diagnostics" / f"episode-{accepted:03d}-seed-{candidate}.jsonl"
+            )
+            recorder = (
+                EpisodeDiagnostics(
+                    env, diagnostic_path, task=task, episode=accepted, seed=candidate
+                )
+                if diagnostics
+                else nullcontext(None)
+            )
+            frame_index = 0
+            with recorder as diagnostic, H264Video(video, frame.shape[:2]) as writer:
                 writer.write(frame)
                 while env.take_action_cnt < env.step_lim:
                     action = validate_action(
@@ -161,6 +175,11 @@ def evaluate(
                         raise RuntimeError("Environment did not advance its action counter")
                     observation = env.get_obs()
                     writer.write(observation["observation"]["head_camera"]["rgb"])
+                    frame_index += 1
+                    if diagnostic is not None:
+                        diagnostic.action(
+                            action, observation["joint_action"]["vector"], frame=frame_index
+                        )
                     if env.eval_success:
                         break
             success = bool(env.eval_success)
@@ -174,6 +193,7 @@ def evaluate(
                 "instruction": instruction,
                 "elapsed_seconds": time.monotonic() - begin,
                 "video": str(video),
+                "diagnostics": str(diagnostic_path) if diagnostics else None,
             }
             append(output / "episodes.jsonl", row)
             successes += int(success)
@@ -212,6 +232,9 @@ def main():
         type=Path,
         required=True,
         help="Dedicated pinned RMBench runtime checkout with assets attached",
+    )
+    parser.add_argument(
+        "--no-diagnostics", action="store_true", help="Disable execution JSONL diagnostics"
     )
     parser.add_argument("--task", required=True)
     parser.add_argument("--uri", default="ws://127.0.0.1:8000")
@@ -261,6 +284,7 @@ def main():
                     "end_episode": args.end_episode,
                     "policy": client.metadata,
                     "video": "h264-yuv420p-head-decision-rate-10fps",
+                    "diagnostics": None if args.no_diagnostics else "execution-jsonl-v1",
                 },
                 indent=2,
             )
@@ -277,6 +301,7 @@ def main():
             end_episode=args.end_episode,
             max_candidates=args.max_candidates,
             describe=describe,
+            diagnostics=not args.no_diagnostics,
         )
 
 
