@@ -1,0 +1,15 @@
+{
+  "chunk_size": 50,
+  "n_action_steps": 50,
+  "action_lr": 0.0001,
+  "vlm_lr": 1e-05,
+  "save_freq": 5000,
+  "stage1": {
+    "batch_size": 8,
+    "steps": 7500
+  },
+  "stage2": {
+    "batch_size": 4,
+    "steps": 85000
+  }
+}
