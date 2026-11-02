@@ -84,7 +84,7 @@ class PhaseOptimizers:
         # during warmup. Preserve the historical episode schedule indexing.
         update = self.counts[self.active] + (self.recipe.update_unit != "chunk")
         budget = self.recipe.phase_budget(self.active)
-        warmup = min(self.recipe.warmup_steps, budget)
+        warmup = min(self.recipe.phase_warmup(self.active), budget)
         if warmup and update <= warmup:
             factor = update / warmup
         else:

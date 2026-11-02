@@ -23,6 +23,11 @@ def canonical(value):
 def normalize_saved_recipe(values):
     """Missing mode fields retain the historical full-episode behavior."""
     return {
+        "memory_phase_length": None,
+        "policy_phase_length": None,
+        "memory_warmup_steps": None,
+        "policy_warmup_steps": None,
+        "save_phase_boundaries": False,
         "training_mode": "alternating",
         "sampling_mode": "same_task",
         "update_unit": "episode",

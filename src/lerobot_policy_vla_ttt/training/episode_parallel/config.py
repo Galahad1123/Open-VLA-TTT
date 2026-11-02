@@ -8,6 +8,11 @@ from dataclasses import dataclass
 class Recipe:
     steps: int = 2000
     phase_length: int = 500
+    memory_phase_length: int | None = None
+    policy_phase_length: int | None = None
+    memory_warmup_steps: int | None = None
+    policy_warmup_steps: int | None = None
+    save_phase_boundaries: bool = False
     global_batch_size: int = 4
     tbptt_events: int = 8
     execution: int = 10
@@ -33,6 +38,18 @@ class Recipe:
     robomme_augmentation: str = "none"
 
     def __post_init__(self):
+        for name in (
+            "memory_phase_length",
+            "policy_phase_length",
+            "memory_warmup_steps",
+            "policy_warmup_steps",
+        ):
+            value = getattr(self, name)
+            minimum = 0 if "warmup" in name else 1
+            if value is not None and (type(value) is not int or value < minimum):
+                raise ValueError(f"{name} must be an integer >= {minimum} or null")
+        if type(self.save_phase_boundaries) is not bool:
+            raise ValueError("save_phase_boundaries must be boolean")
         if type(self.activation_offload) is not bool:
             raise ValueError("activation_offload must be boolean")
         if self.activation_offload and self.episode_microbatch_size is None:
@@ -110,9 +127,24 @@ class Recipe:
         """Phase for the zero-based next outer update."""
         if self.training_mode in ("joint", "policy"):
             return self.training_mode
-        return "memory" if (step // self.phase_length) % 2 == 0 else "policy"
+        memory = self.memory_phase_length or self.phase_length
+        policy = self.policy_phase_length or self.phase_length
+        return "memory" if step % (memory + policy) < memory else "policy"
 
     def phase_budget(self, phase):
         if self.training_mode in ("policy", "joint"):
             return self.steps if phase == self.training_mode else 0
         return sum(self.phase(step) == phase for step in range(self.steps))
+
+    def phase_warmup(self, phase):
+        override = getattr(self, f"{phase}_warmup_steps", None)
+        return self.warmup_steps if override is None else override
+
+    def should_save(self, step, end):
+        """Completed update count; always save on a requested early stop."""
+        boundary = (
+            self.save_phase_boundaries
+            and self.training_mode == "alternating"
+            and self.phase(step - 1) != self.phase(step)
+        )
+        return step % self.save_every == 0 or step == end or boundary

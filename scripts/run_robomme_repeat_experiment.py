@@ -17,6 +17,7 @@ def main():
     p.add_argument("--machine", type=Path, required=True)
     p.add_argument("--checkpoint", type=Path, required=True)
     p.add_argument("--run-name", required=True)
+    p.add_argument("--recipe", type=Path, help="Override the default experiment recipe")
     p.add_argument("--probe", action="store_true")
     p.add_argument("--probe-updates", type=int, default=30)
     p.add_argument("--dry-run", action="store_true")
@@ -40,6 +41,8 @@ def main():
     if output.exists():
         raise FileExistsError(output)
     recipe = root / f"configs/training/robomme-screen/repeat-two-frozen-{args.kind}.json"
+    if args.recipe is not None:
+        recipe = args.recipe.expanduser().resolve()
     command = [
         sys.executable,
         "-m",

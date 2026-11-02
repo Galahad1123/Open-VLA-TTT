@@ -254,7 +254,7 @@ def run(
                 except Exception as exc:
                     error = f"Metrics write failed: {exc}"
             collective_error(error, accelerator.device)
-            if step % recipe.save_every == 0 or step == end:
+            if recipe.should_save(step, end):
                 progress.saving()
                 save_checkpoint(
                     output / f"step-{step:08d}",
