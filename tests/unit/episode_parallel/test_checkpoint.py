@@ -214,3 +214,47 @@ def test_legacy_recipe_missing_only_new_keys_restores(monkeypatch, tmp_path):
     torch.save(saved, path / "training.pt")
     with pytest.raises(RuntimeError, match="recipe"):
         load_checkpoint(path, policy, control, accelerator, recipe=recipe, identity={})
+
+
+def test_phase_boundary_checkpoint_and_time_limit(tmp_path, monkeypatch):
+    p = make_policy("aqmem", monkeypatch)
+    recipe = Recipe(
+        steps=8,
+        memory_phase_length=3,
+        policy_phase_length=1,
+        global_batch_size=1,
+        horizon=3,
+        execution=2,
+        tbptt_events=4,
+        save_every=99,
+        save_phase_boundaries=True,
+    )
+    run(
+        p,
+        source(),
+        None,
+        None,
+        recipe=recipe,
+        accelerator=Accelerator(cpu=True),
+        output=tmp_path / "boundary",
+        identity={},
+    )
+    assert sorted(x.name for x in (tmp_path / "boundary").glob("step-*")) == [
+        "step-00000003",
+        "step-00000004",
+        "step-00000007",
+        "step-00000008",
+    ]
+    p = make_policy("aqmem", monkeypatch)
+    result = run(
+        p,
+        source(),
+        None,
+        None,
+        recipe=replace(recipe, max_run_seconds=0.000001),
+        accelerator=Accelerator(cpu=True),
+        output=tmp_path / "timed",
+        identity={},
+    )
+    assert result["step"] == 1
+    assert (tmp_path / "timed/step-00000001/COMPLETE").is_file()

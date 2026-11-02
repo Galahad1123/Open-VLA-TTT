@@ -63,10 +63,10 @@ def resolve_config(source, architecture, recipe, *, device, overrides=None):
         use_amp=True,
         use_flash_attn=False,
         training_stage="stage2",
-        apply_training_stage_defaults=True,
-        finetune_vlm=True,
-        finetune_language_model=True,
-        finetune_vision_model=True,
+        apply_training_stage_defaults=not recipe.freeze_vlm,
+        finetune_vlm=not recipe.freeze_vlm,
+        finetune_language_model=not recipe.freeze_vlm,
+        finetune_vision_model=not recipe.freeze_vlm,
         finetune_action_head=True,
         memory_training="joint" if recipe.training_mode == "joint" else "memory_only",
         memory_update_protocol="half_execution",
@@ -119,10 +119,11 @@ def main(argv=None):
         "--vlm-path", type=Path, help="Local VLM override, without editing checkpoints"
     )
     parser.add_argument("--dataset-root", type=Path)
-    parser.add_argument("--benchmark", choices=("libero", "robomme"))
+    parser.add_argument("--benchmark", choices=("libero", "robomme", "rmbench"))
     parser.add_argument(
         "--demo-stride", type=int, help="RoboMME demo frame stride; defaults to E/2"
     )
+    parser.add_argument("--tasks", nargs="+", help="RMBench task names")
     parser.add_argument("--dataset-repo")
     parser.add_argument("--revision")
     parser.add_argument(
@@ -194,12 +195,24 @@ def main(argv=None):
         args.dataset_repo = (
             args.dataset_repo
             or old_dataset.get("repo")
-            or ("lerobot/robomme" if benchmark == "robomme" else "HuggingFaceVLA/libero")
+            or (
+                "lerobot/robomme"
+                if benchmark == "robomme"
+                else "local/rmbench"
+                if benchmark == "rmbench"
+                else "HuggingFaceVLA/libero"
+            )
         )
         args.revision = (
             args.revision
             or old_dataset.get("revision")
-            or (ROBOMME_REVISION if benchmark == "robomme" else LIBERO_REVISION)
+            or (
+                ROBOMME_REVISION
+                if benchmark == "robomme"
+                else "local"
+                if benchmark == "rmbench"
+                else LIBERO_REVISION
+            )
         )
         recipe_values = (
             resume_state["recipe"]
@@ -218,7 +231,7 @@ def main(argv=None):
             if args.demo_stride is not None
             else protocol.get("demo_stride", recipe.execution // 2)
         )
-        if demo_stride < 1 or (benchmark == "libero" and args.demo_stride is not None):
+        if demo_stride < 1 or (benchmark != "robomme" and args.demo_stride is not None):
             raise ValueError("demo-stride must be positive and is only supported for RoboMME")
         args.benchmark, args.demo_stride = benchmark, demo_stride
         world = int(os.environ.get("WORLD_SIZE", "1"))
@@ -228,7 +241,11 @@ def main(argv=None):
         # CPU here avoids GPU discovery during --dry-run.
         resolved = resolve_config(source, architecture, recipe, device="cpu", overrides=overrides)
         info = json.loads((args.dataset_root / "meta/info.json").read_text())
-        action_key, action_dim = ("actions", 8) if benchmark == "robomme" else ("action", 7)
+        action_key, action_dim = (
+            ("actions", 8)
+            if benchmark == "robomme"
+            else ("action", 14 if benchmark == "rmbench" else 7)
+        )
         if info["features"][action_key]["shape"] != [action_dim]:
             raise ValueError(f"Dataset action dimension must be {action_dim} for {benchmark}")
         if source.output_features and source.output_features["action"].shape != (action_dim,):
@@ -271,6 +288,25 @@ def main(argv=None):
                 "reset_at_execution": False,
                 "execution_clock": "exec_start_idx",
             }
+        if benchmark == "rmbench":
+            from ..baselines.rmbench import UPSTREAM_REVISION, resolve_tasks
+
+            preparation = json.loads((args.dataset_root / "preparation.json").read_text())
+            if preparation["upstream_revision"] != UPSTREAM_REVISION:
+                raise ValueError("RMBench preparation revision mismatch")
+            args.tasks = resolve_tasks(args.tasks or protocol.get("tasks", []))
+            if not args.tasks:
+                raise ValueError("RMBench requires --tasks")
+            identity["sequence_protocol"] = {
+                "benchmark": "rmbench",
+                "version": 1,
+                "tasks": args.tasks,
+                "preparation_sha256": hashlib.sha256(
+                    (args.dataset_root / "preparation.json").read_bytes()
+                ).hexdigest(),
+            }
+        elif args.tasks:
+            raise ValueError("--tasks requires RMBench")
         paths = {
             name: str(getattr(args, name)) if getattr(args, name) else None
             for name in ("checkpoint", "resume", "dataset_root", "output")
@@ -474,6 +510,14 @@ def _execute_run(
                         int(row["dataset_to_index"]),
                     )
                 )
+        if args.benchmark == "rmbench":
+            from .episode_parallel.rmbench import select_episodes
+
+            episodes = select_episodes(
+                dataset.meta.episodes,
+                json.loads((args.dataset_root / "preparation.json").read_text()),
+                args.tasks,
+            )
         source_data = EpisodeSource(
             dataset,
             episodes,

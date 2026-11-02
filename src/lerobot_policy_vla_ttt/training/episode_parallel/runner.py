@@ -181,6 +181,8 @@ def run(
             for key in COUNTERS:
                 metrics[key] = int(metrics[key])
                 totals[key] += metrics[key]
+            if accelerator.device.type == "cuda":
+                metrics["peak_allocated_gib"] = torch.cuda.max_memory_allocated() / 2**30
             metrics.update(
                 step=step,
                 phase=phase,
@@ -217,7 +219,21 @@ def run(
                 except Exception as exc:
                     error = f"Metrics write failed: {exc}"
             collective_error(error, accelerator.device)
-            if step % recipe.save_every == 0 or step == end:
+            timed_stop = torch.tensor(
+                int(
+                    recipe.max_run_seconds is not None
+                    and time.monotonic() - start_time >= recipe.max_run_seconds
+                ),
+                device=accelerator.device,
+            )
+            if distributed():
+                dist.all_reduce(timed_stop, op=dist.ReduceOp.MAX)
+            if (
+                step % recipe.save_every == 0
+                or step == end
+                or (recipe.save_phase_boundaries and recipe.phase_boundary(step))
+                or bool(timed_stop)
+            ):
                 progress.saving()
                 save_checkpoint(
                     output / f"step-{step:08d}",
@@ -231,4 +247,6 @@ def run(
                     totals=totals,
                 )
                 progress.saved()
+            if bool(timed_stop):
+                break
     return {"step": step, "counts": control.counts.copy(), "totals": totals.copy()}

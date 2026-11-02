@@ -26,6 +26,12 @@ def normalize_saved_recipe(values):
         "training_mode": "alternating",
         "sampling_mode": "same_task",
         "update_unit": "episode",
+        "memory_phase_length": None,
+        "policy_phase_length": None,
+        "freeze_vlm": False,
+        "warmup_ratio": None,
+        "save_phase_boundaries": False,
+        "max_run_seconds": None,
         **values,
     }
 

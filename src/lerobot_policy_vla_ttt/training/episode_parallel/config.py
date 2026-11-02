@@ -8,6 +8,12 @@ from dataclasses import dataclass
 class Recipe:
     steps: int = 2000
     phase_length: int = 500
+    memory_phase_length: int | None = None
+    policy_phase_length: int | None = None
+    freeze_vlm: bool = False
+    warmup_ratio: float | None = None
+    save_phase_boundaries: bool = False
+    max_run_seconds: float | None = None
     global_batch_size: int = 4
     tbptt_events: int = 8
     execution: int = 10
@@ -27,6 +33,20 @@ class Recipe:
     update_unit: str = "episode"
 
     def __post_init__(self):
+        lengths = (self.memory_phase_length, self.policy_phase_length)
+        if any(x is not None for x in lengths):
+            if any(type(x) is not int or x < 1 for x in lengths):
+                raise ValueError("Both phase lengths must be positive integers")
+            if self.training_mode != "alternating":
+                raise ValueError("Explicit phase lengths require alternating training")
+        if type(self.freeze_vlm) is not bool:
+            raise ValueError("freeze_vlm must be boolean")
+        if self.warmup_ratio is not None and not 0 <= self.warmup_ratio < 1:
+            raise ValueError("warmup_ratio must be in [0,1)")
+        if self.max_run_seconds is not None and (
+            not math.isfinite(self.max_run_seconds) or self.max_run_seconds <= 0
+        ):
+            raise ValueError("max_run_seconds must be positive and finite")
         if self.update_unit not in ("episode", "chunk"):
             raise ValueError("update_unit must be episode or chunk")
         if self.update_unit == "chunk":
@@ -67,7 +87,14 @@ class Recipe:
         """Phase for the zero-based next outer update."""
         if self.training_mode in ("joint", "policy"):
             return self.training_mode
-        return "memory" if (step // self.phase_length) % 2 == 0 else "policy"
+        memory = self.memory_phase_length or self.phase_length
+        policy = self.policy_phase_length or self.phase_length
+        return "memory" if step % (memory + policy) < memory else "policy"
+
+    def phase_boundary(self, completed):
+        return completed > 0 and (
+            completed == self.steps or self.phase(completed - 1) != self.phase(completed)
+        )
 
     def phase_budget(self, phase):
         if self.training_mode in ("policy", "joint"):
