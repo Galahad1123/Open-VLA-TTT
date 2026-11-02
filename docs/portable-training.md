@@ -494,3 +494,29 @@ mkdir -p "$TMPDIR" "$XDG_CACHE_HOME" "$CUDA_CACHE_PATH"
 ```
 
 训练命令的 `tee` 日志也应写入 `runs_root`。数据、模型和所有检查点均不需要放进代码仓库。
+
+### RMBench AQMem 双任务序列微调
+
+分支 `feat/rmbench-aqmem`；沿用 `configs/machine.local.toml` 的
+`assets.rmbench_dataset`（直接含 `meta/`、`data/` 和 `preparation.json`）、
+`assets.vlm`、`storage.runs_root`。不需要复制单独任务数据集。
+加载三任务85k baseline，冻结整个VLM，只训练AQMem慢参数和动作头。
+
+```bash
+bash scripts/train_rmbench_aqmem.sh \
+  /absolute/path/to/085000/pretrained_model \
+  /absolute/path/to/measured-recipe.json \
+  rmbench-aqmem-four-rounds
+```
+
+仓库 `configs/ttt/aqmem/rmbench/recipe.json` 是16步短测模板。
+正式配方由双卡完整episode吞吐决定：四轮，每轮memory=3K、policy=K，
+总步数16K。两组学习率5e-4/2e-6，各自5% warmup后cosine至0.1倍，
+跨轮不重启。H50/E24、global batch4、TBPTT8。
+短测可追加 `--stop-after 4`；保存于输出目录的 `step-XXXXXXXX/`，
+包含可恢复优化器状态及 `pretrained_model/`。
+
+逐episode累积为默认参考路径，每卡顺序处理两个episode，显式求和外层梯度。
+正式预算应扣除初始化、检查点保存及最长更新余量；`max_run_seconds`
+从训练循环开始计时，仅在完整更新边界安全停止，不能作为硬杀进程的24h计时器。
+评测须使用E24及每物理步发送观测，让AQMem接收到中点写入。
