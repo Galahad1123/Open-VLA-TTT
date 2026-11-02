@@ -104,7 +104,8 @@ def test_real_encoder_and_rollout_no_privileged_input(tmp_path):
         Recorded(Env(), obs, rec.path)
 
 
-def test_cli_filters_before_policy_and_finishes_report(tmp_path, monkeypatch):
+@pytest.mark.parametrize("implementation", ["evo1_groot", "aqmem", "mag"])
+def test_cli_filters_before_policy_and_finishes_report(tmp_path, monkeypatch, implementation):
     import json
     import sys
 
@@ -127,7 +128,7 @@ def test_cli_filters_before_policy_and_finishes_report(tmp_path, monkeypatch):
             pass
 
     class Client:
-        metadata = {"implementation": "evo1_groot"}
+        metadata = {"implementation": implementation}
 
         def __init__(self, *args, **kw):
             pass

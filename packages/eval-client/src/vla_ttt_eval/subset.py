@@ -177,8 +177,8 @@ def main():
 
     report(args.output, rows, False)
     with PolicyClient(args.server, benchmark="robomme", timeout=180) as client:
-        if client.metadata["implementation"] not in {"evo1_groot", "aqmem"}:
-            raise ValueError("Subset evaluation supports evo1_groot and aqmem")
+        if client.metadata["implementation"] not in {"evo1_groot", "aqmem", "mag"}:
+            raise ValueError("Subset evaluation supports evo1_groot, aqmem and mag")
         (args.output / "run.json").write_text(
             json.dumps(dict(config=config, policy=client.metadata), indent=2)
         )
