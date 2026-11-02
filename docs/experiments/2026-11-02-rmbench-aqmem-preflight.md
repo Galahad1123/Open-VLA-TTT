@@ -22,3 +22,8 @@ TTT结束保存逐张量比对baseline：733个原张量全部不变，无缺失
 补充真实权重验证：memory→policy后119个原动作头张量变化，VLM和新增memory张量零变化。
 双卡从step4恢复至step5成功，累计memory4/policy1，LR4.22343665e-4，未重新warmup；loss.00164285，耗时49.71s。
 每个完整检查点约4GB，八阶段约32GB；恢复短测结束预计剩余约60GB，足够正式保存。
+
+正式启动：源码快照655fd6d，远端`/root/autodl-tmp/runsources/rmbench-aqmem-655fd6d`，复用`/root/Open-VLA-TTT/.venv`。
+训练输出`/root/autodl-tmp/outputs/rmbench-aqmem-four-rounds-20261102`；
+启动器日志`/root/autodl-tmp/outputs/rmbench-aqmem-four-rounds-20261102-launch/run.log`，同目录记录pid、started_at、结束后的exit_code/finished_at。
+使用四轮配方重新加载原85k baseline，未续用短测权重。后续E24基线对照与正式模型评测尚未执行，不在训练期占用GPU。
